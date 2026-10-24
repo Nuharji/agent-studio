@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.1 — 2026-10-24
+- New app icon: the tile now fades from dark at the top left to lighter at the bottom right, like the other Studio apps.
+
 ## 0.1.0 — 2026-10-24
 - First version (Pre-Alpha). Claude works for you with routines, your Markdown to-do list or on request — through
   Claude Code with your own sign-in; no keys or passwords are stored.
