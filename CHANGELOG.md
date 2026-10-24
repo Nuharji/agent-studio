@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 — 2026-10-24
+- New to-dos right in Agent Studio: each linked list has a field to add an item — pick the section (the file's headings,
+  e.g. "Medium priority"; the last one used is remembered) and press Enter. The item goes into the file at the end of
+  that section, in the list style used there. "Add & do it" (Ctrl+Enter) lets Claude start on it right away;
+  Agent → New to-do (Ctrl+T) jumps to the field.
+- Ticking finds the item again when lines moved meanwhile (e.g. after adding to-dos above it).
+
 ## 0.2.0 — 2026-10-24
 - Auto mode (per routine, per list, per task): Claude works on its own within the rights — any command, no question for
   each step. Claude Code checks every step itself and still refuses risky ones (they come to "Needs you"); the rights

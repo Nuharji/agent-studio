@@ -305,6 +305,10 @@ body{grid-template-columns:minmax(0,1fr)}
 .row input[type=checkbox]{width:15px;height:15px;accent-color:var(--accent);flex:none;margin:0}
 .row .btn-sm{height:24px;padding:0 10px;flex:none}
 .row.d1{padding-left:30px}.row.d2{padding-left:52px}
+.todo-add{display:flex;gap:6px;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--card-border)}
+.todo-add .field-in{flex:1 1 200px;width:auto;min-width:0;height:28px}
+.todo-add .field-in:focus,.todo-add select:focus{border-color:var(--accent)}
+.todo-add select{flex:0 1 180px;min-width:0;height:28px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:var(--radius);padding:0 6px;font:inherit;outline:0}
 .dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--dim)}
 .dot.running{background:var(--accent);animation:pulse 1.2s infinite}
 .dot.done{background:var(--ok)}.dot.needsYou{background:var(--warn)}.dot.failed,.dot.timeout{background:var(--danger)}.dot.stopped{background:var(--dim)}

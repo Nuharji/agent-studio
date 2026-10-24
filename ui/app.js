@@ -152,6 +152,33 @@ async function loadTodo(path) {
   todos[path] = invoke ? await invoke('todo_read', {path}).catch(e => ({items: [], stamp: 0, error: String(e)})) : {items: [], stamp: 0, error: t('ui.appOnly')};
 }
 const todoKey = (path, text) => path + '\u0000' + text;
+/* New items typed in the app: the text being typed per list, and where it goes (the last section used, else the one
+   with the first open item). */
+const addDraft = {};
+function addSection(path) {
+  const d = todos[path] || {}, secs = d.sections || [], f = listOf(path);
+  if (f && f.addSection !== undefined && (f.addSection === '' || secs.includes(f.addSection))) return f.addSection;
+  const it = (d.items || []).find(i => !i.done) || (d.items || [])[0];
+  return it ? it.section : secs[0] || '';
+}
+let adding = false;
+async function addItem(path, go) {
+  if (adding) return;
+  const el = $(`[data-add-text="${CSS.escape(path)}"]`), sec = $(`[data-add-sect="${CSS.escape(path)}"]`);
+  const text = (el ? el.value : '').replace(/\s+/g, ' ').trim();
+  if (!text) { el && el.focus(); return; }
+  const section = sec ? sec.value : addSection(path);
+  let line;
+  adding = true;
+  try { line = await invoke('todo_add', {path, section, text}); } catch (err) { return toast(String(err)); } finally { adding = false; }
+  const f = listOf(path); if (f) { f.addSection = section; saveCfg(); }
+  delete addDraft[path];
+  await loadTodo(path);
+  renderView();
+  const box = $(`[data-add-text="${CSS.escape(path)}"]`); if (box) box.focus();
+  toast(t('todo.added', {text}));
+  if (go) { const it = todos[path].items.find(i => i.line === line && i.text === text); if (it) doItem(path, it); }
+}
 /* The newest run for an item of a list. */
 function runForItem(path, text) {
   return data.runs.find(r => r.spec.todo && r.spec.todo.path === path && r.spec.todo.text === text);
@@ -298,9 +325,13 @@ function setView(v) { settings.view = v; saveSettings(); renderAll(); }
 function renderAll() { renderView(); renderDetails(); updateStatus(); syncTools(); }
 function renderView() {
   const box = $('#view');
-  const keep = box.scrollTop;
+  const keep = box.scrollTop, a = document.activeElement, typingIn = a && box.contains(a) && a.dataset.addText;
+  const caret = typingIn ? [a.selectionStart, a.selectionEnd] : null;
   box.innerHTML = {inbox: viewInbox, todos: viewTodos, routines: viewRoutines, history: viewHistory}[settings.view]();
   box.scrollTop = keep;
+  // A new to-do being typed stays focused when the lists are redrawn (e.g. because the file changed).
+  const el = typingIn && box.querySelector(`[data-add-text="${CSS.escape(typingIn)}"]`);
+  if (el) { el.focus({preventScroll: true}); el.setSelectionRange(...caret); }
 }
 const statusBadge = st => `<span class="badge ${({running: 'blue', done: 'ok', needsYou: 'warn', failed: 'red', timeout: 'red'})[st] || ''}">${esc(t('st.' + st))}</span>`;
 const levelBadge = l => `<span class="badge${l === 'publish' ? ' warn' : ''}">${esc(t('lv.' + l))}</span>`;
@@ -384,6 +415,13 @@ function viewTodos() {
         <input type="checkbox" disabled${it.done ? ' checked' : ''}><span class="grow" title="${esc(it.text)}">${esc(it.text)}</span>
         ${st ? statusBadge(st) : ''}
         ${!it.done && st !== 'running' ? `<button class="btn-sm${st ? '' : ' primary'}" data-doitem="${esc(f.path)}" data-line="${it.line}">${esc(st ? t('todo.again') : t('todo.do'))}</button>` : ''}</div>`;
+    }
+    if (!d.error) {
+      const secs = d.sections || [], cur = addSection(f.path);
+      const opts = (d.items.some(i => !i.section) || !secs.length ? [''] : []).concat(secs);
+      h += `<div class="todo-add"><input class="field-in" data-add-text="${esc(f.path)}" value="${esc(addDraft[f.path] || '')}" placeholder="${esc(t('todo.addPh'))}">
+        ${opts.length > 1 ? `<select data-add-sect="${esc(f.path)}" title="${esc(t('todo.addWhere'))}">${opts.map(s => `<option value="${esc(s)}"${s === cur ? ' selected' : ''}>${esc(s || t('todo.addTop'))}</option>`).join('')}</select>` : ''}
+        <button class="btn-sm" data-add="${esc(f.path)}" title="Enter">${esc(t('todo.add'))}</button><button class="btn-sm" data-add-go="${esc(f.path)}" title="${esc(t('todo.addGoHint'))}">${esc(t('todo.addGo'))}</button></div>`;
     }
     h += '</div>';
   }
@@ -630,6 +668,8 @@ $('#view').addEventListener('click', async e => {
   if (d.stopRoutine) { const r = data.runs.find(x => x.spec.routineId === d.stopRoutine && isRunning(x.id)); if (r) stopRun(r.id); return; }
   if (d.doitem) { const it = (todos[d.doitem].items || []).find(i => i.line === +d.line); if (it) doItem(d.doitem, it); return; }
   if (d.doall) return doList(d.doall);
+  if (d.add) return addItem(d.add, false);
+  if (d.addGo) return addItem(d.addGo, true);
   if (d.unlink) { cfg.todoFiles = cfg.todoFiles.filter(f => f.path !== d.unlink); if (sel && sel.type === 'list' && sel.id === d.unlink) sel = null; saveCfg(); return renderAll(); }
   if (d.listEdit) { sel = {type: 'list', id: d.listEdit}; return renderAll(); }
   if (d.todoEdit !== undefined || d.todoProfile !== undefined) { sel = {type: 'todo'}; return renderAll(); }
@@ -639,9 +679,14 @@ $('#view').addEventListener('click', async e => {
 $('#view').addEventListener('change', e => {
   const d = e.target.dataset;
   if (d.tick) { const f = cfg.todoFiles.find(x => x.path === d.tick); f.tick = e.target.checked; saveCfg(); }
+  if (d.addSect !== undefined) { const f = listOf(d.addSect); if (f) { f.addSection = e.target.value; saveCfg(); } }
   if (d.enable) { const r = routineOf(d.enable); r.enabled = e.target.checked; if (r.enabled) r.created = Math.max(r.created || 0, Date.now() - 1); saveCfg(); renderAll(); }
 });
+$('#view').addEventListener('input', e => { const p = e.target.dataset.addText; if (p !== undefined) addDraft[p] = e.target.value; });
 $('#view').addEventListener('keydown', e => {
+  const p = e.target.dataset && e.target.dataset.addText;
+  if (p && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); return addItem(p, e.metaKey || e.ctrlKey); }
+  if (p && e.key === 'Escape' && e.target.value) { e.stopPropagation(); e.target.value = ''; delete addDraft[p]; return; }
   const n = e.target.dataset && e.target.dataset.note;
   if (n && e.key === 'Enter') { const b = $(`[data-answer="${n}"]`) || $(`[data-approve="${n}"]`); if (b) b.click(); }
 });
@@ -732,6 +777,11 @@ listen('login-done', e => { loginBusy = false; toast(e.payload ? t('cl.loginOk')
 /* ================= Menus, toolbars ================= */
 const A = {
   newTask, newRoutine, linkTodo, stopAll,
+  newTodo: () => {
+    if (!cfg.todoFiles.length) return linkTodo();
+    if (settings.view !== 'todos') setView('todos');
+    const el = $('[data-add-text]'); if (el) { el.focus(); el.scrollIntoView({block: 'nearest'}); }
+  },
   runSel: () => { if (sel && sel.type === 'routine') startRoutine(routineOf(sel.id)); else if (sel && sel.type === 'run' && runOf(sel.id)) startRun({...firstOf(runOf(sel.id)).spec, resume: null, continues: null, allowOnce: []}); },
   dismissDone: async () => { const ids = data.inbox.filter(i => i.kind === 'done' || i.kind === 'problem').map(i => i.id); if (ids.length) { await invoke('inbox_dismiss', {ids}); refresh(); } },
   clearHistory: async () => { if (await ask(t('a.clearHistory'), t('hist.clearAsk'), t('a.clearHistory'))) { await invoke('runs_clear'); sel = null; refresh(); } },
@@ -756,7 +806,7 @@ const A = {
 };
 // Menu items: [action, shortcut, checked(), fixed]; '-' is a separator, '#key' a section label (as in every Studio app).
 const MENUS = [
-  ['agent', [['newTask', 'Ctrl+N'], ['newRoutine', 'Ctrl+Shift+N'], ['linkTodo', 'Ctrl+L'], '-', ['runSel', 'Ctrl+R'], ['stopAll', 'Ctrl+.'], '-', ['dismissDone'], ['clearHistory']]],
+  ['agent', [['newTask', 'Ctrl+N'], ['newRoutine', 'Ctrl+Shift+N'], ['linkTodo', 'Ctrl+L'], ['newTodo', 'Ctrl+T'], '-', ['runSel', 'Ctrl+R'], ['stopAll', 'Ctrl+.'], '-', ['dismissDone'], ['clearHistory']]],
   ['view', [['viewInbox', 'Alt+1', () => settings.view === 'inbox'], ['viewTodos', 'Alt+2', () => settings.view === 'todos'], ['viewRoutines', 'Alt+3', () => settings.view === 'routines'],
     ['viewHistory', 'Alt+4', () => settings.view === 'history'], '-', ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
   ['settings', [['settings', 'Ctrl+,'], ['claudeSettings'], ['controlSettings'], '-', '#menu.language',

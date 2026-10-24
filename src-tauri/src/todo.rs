@@ -1,5 +1,6 @@
 //! Linked to-do lists: any Markdown file with checkboxes (`- [ ] …`, `* [x] …`, `1. [ ] …`). The file stays the
-//! person's own — it is only read, and a box is ticked only when they allowed it for that file.
+//! person's own — it is only read; a box is ticked only when they allowed it for that file, and a new item is only
+//! written when they add one in the app.
 
 use serde::Serialize;
 
@@ -52,12 +53,85 @@ pub fn parse(md: &str) -> Vec<Item> {
     out
 }
 
-/// The file with the box of `line` ticked — only when that line still holds `text` (the file may have changed).
+/// The headings of the file (where a new item can go), in order, without repeats.
+pub fn sections(md: &str) -> Vec<String> {
+    let (mut out, mut fence) = (Vec::<String>::new(), false);
+    for line in md.lines() {
+        let tr = line.trim_start();
+        if tr.starts_with("```") || tr.starts_with("~~~") { fence = !fence; continue; }
+        if fence || !tr.starts_with('#') { continue; }
+        let h = tr.trim_start_matches('#').trim().to_string();
+        if !h.is_empty() && !out.contains(&h) { out.push(h); }
+    }
+    out
+}
+
+/// The file with a new open item `text` at the end of `section` (its first heading of that name; "" = before the first
+/// heading), in the list style of that section. A missing section gets the item at the end of the file.
+/// Returns the new file and the item's line.
+pub fn add(md: &str, section: &str, text: &str) -> Option<(String, usize)> {
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() { return None; }
+    let nl = if md.contains("\r\n") { "\r\n" } else { "\n" };
+    let lines: Vec<&str> = md.lines().collect();
+    let (mut cur, mut fence) = (String::new(), false);
+    let (mut head, mut last, mut marker) = (None::<usize>, None::<usize>, None::<String>);
+    for (i, line) in lines.iter().enumerate() {
+        let tr = line.trim_start();
+        if tr.starts_with("```") || tr.starts_with("~~~") { fence = !fence; continue; }
+        if fence { continue; }
+        if tr.starts_with('#') {
+            if cur == section { break; } // the end of the section
+            cur = tr.trim_start_matches('#').trim().to_string();
+            if cur == section { head = Some(i); }
+            continue;
+        }
+        if cur != section { continue; }
+        if checkbox(line).is_some() {
+            last = Some(i);
+            if marker.is_none() && tr.len() == line.len() {
+                // "-", "*" or "+" like the items above; numbered lists get "-" (no renumbering).
+                let m = &line[..1];
+                marker = Some(if m == "*" || m == "+" { m.to_string() } else { "-".into() });
+            }
+        } else if last.is_some() && !line.trim().is_empty() && line.len() != tr.len() {
+            last = Some(i); // indented text that belongs to the item above
+        }
+    }
+    let item = format!("{} [ ] {text}", marker.as_deref().unwrap_or("-"));
+    let at = match (last, head) {
+        (Some(l), _) => l + 1,
+        (None, Some(h)) => h + 1,
+        (None, None) if section.is_empty() && lines.iter().any(|l| l.trim_start().starts_with('#')) => 0,
+        _ => {
+            let mut out = md.to_string();
+            if !out.is_empty() && !out.ends_with('\n') { out.push_str(nl); }
+            out.push_str(&item);
+            out.push_str(nl);
+            return Some((out, lines.len()));
+        }
+    };
+    let mut out: Vec<&str> = lines.clone();
+    out.insert(at, &item);
+    let mut s = out.join(nl);
+    if md.ends_with('\n') || at == lines.len() { s.push_str(nl); }
+    Some((s, at))
+}
+
+/// The file with the box of `line` ticked — only when that line still holds `text`; when the file changed meanwhile,
+/// the one open item with exactly that text (if there is just one).
 pub fn tick(md: &str, line: usize, text: &str) -> Option<String> {
     let mut lines: Vec<String> = md.split('\n').map(str::to_string).collect();
-    let l = lines.get(line)?;
-    let (n, done) = checkbox(l.trim_end_matches('\r'))?;
-    if done || l[n..].trim() != text { return None; }
+    let holds = |l: &str| checkbox(l.trim_end_matches('\r')).is_some_and(|(n, done)| !done && l[n..].trim() == text);
+    let line = if lines.get(line).is_some_and(|l| holds(l)) {
+        line
+    } else {
+        let same: Vec<_> = parse(md).into_iter().filter(|i| !i.done && i.text == text).collect();
+        if same.len() != 1 { return None; }
+        same[0].line
+    };
+    let l = &lines[line];
+    let (n, _) = checkbox(l.trim_end_matches('\r'))?;
     let open = l[..n].rfind("[ ]")?;
     lines[line].replace_range(open..open + 3, "[x]");
     Some(lines.join("\n"))
@@ -90,5 +164,34 @@ mod tests {
         assert!(tick(MD, 3, "Etwas anderes").is_none(), "the line changed meanwhile");
         assert!(tick(MD, 4, "Ursache finden").is_none(), "already done");
         assert!(tick("a\r\n- [ ] b\r\n", 1, "b").unwrap().contains("- [x] b\r"));
+        let moved = tick(MD, 1, "Nummeriert").unwrap();
+        assert!(moved.contains("1. [x] Nummeriert"), "found again after lines moved");
+        assert!(tick("- [ ] a\n- [ ] a\n- [ ] b\n", 2, "a").is_none(), "two items with that text");
+    }
+
+    #[test]
+    fn lists_sections() {
+        assert_eq!(sections(MD), vec!["To-do", "Hohe Priorität", "Niedrige Priorität"]);
+    }
+
+    #[test]
+    fn adds_at_the_end_of_a_section() {
+        let (out, line) = add(MD, "Hohe Priorität", "  Neues\n Ding ").unwrap();
+        assert_eq!(line, 5);
+        assert!(out.contains("  - [x] Ursache finden\n- [ ] Neues Ding\n\n#### Niedrige"));
+        assert_eq!(parse(&out).iter().find(|i| i.line == line).unwrap().section, "Hohe Priorität");
+
+        let (out, line) = add(MD, "Niedrige Priorität", "Noch was").unwrap();
+        assert!(out.contains("1. [ ] Nummeriert\n- [] kein Kästchen\n- [ ]\n* [ ] Noch was\n```"), "{out}");
+        assert_eq!(out.lines().nth(line), Some("* [ ] Noch was"));
+
+        let md = "# Liste\n\n## Leer\n\n## Voll\n* [ ] a\n  Notiz zu a\n";
+        assert_eq!(add(md, "Leer", "x").unwrap().0, "# Liste\n\n## Leer\n- [ ] x\n\n## Voll\n* [ ] a\n  Notiz zu a\n");
+        assert_eq!(add(md, "Voll", "y").unwrap().0, "# Liste\n\n## Leer\n\n## Voll\n* [ ] a\n  Notiz zu a\n* [ ] y\n");
+        assert_eq!(add(md, "Weg", "z").unwrap(), ("# Liste\n\n## Leer\n\n## Voll\n* [ ] a\n  Notiz zu a\n- [ ] z\n".into(), 7));
+        assert_eq!(add("- [ ] a", "", "b").unwrap(), ("- [ ] a\n- [ ] b\n".into(), 1));
+        assert_eq!(add("", "", "b").unwrap(), ("- [ ] b\n".into(), 0));
+        assert_eq!(add("a\r\n## S\r\n- [ ] b\r\n", "S", "c").unwrap().0, "a\r\n## S\r\n- [ ] b\r\n- [ ] c\r\n");
+        assert!(add(MD, "Hohe Priorität", "  ").is_none());
     }
 }

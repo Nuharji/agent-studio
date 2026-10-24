@@ -20,6 +20,8 @@ API key and no password; routines, logs and history stay on your computer.
   "Do it" per item or "Work through" the whole list; each item shows its state (running · needs you · done · problem).
   The file stays yours: Claude only ticks an item when you allowed it for that file. Changes are noticed at once.
   Link as many lists as you like (several at once), each with **its own folders and rights** or the ones for all lists.
+  **New to-dos right in the app:** type one under a list, pick the section (e.g. "Medium priority") and press Enter —
+  it is written into the file at the end of that section; "Add & do it" (Ctrl+Enter) lets Claude start on it at once.
 - **Routines:** a standing task in your words, the folders, the rights and when — only by button, every day, Mon–Fri,
   every week, when Agent Studio starts, or when the to-do list changes. A missed time is caught up when the app opens.
   Templates: work through the to-do list, bug hunt (report only), check builds, weekly review, study sheet from notes,

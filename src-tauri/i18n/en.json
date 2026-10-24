@@ -336,5 +336,13 @@
  "ed.auto": "Auto mode — don’t ask for every step",
  "ed.autoShort": "Auto mode",
  "ed.autoHint": "Off: only what the rights allow, everything else comes to you for approval.",
- "ed.autoOn": "Claude works on its own within the rights: any command, no question for each step. Claude Code checks every step and still refuses risky ones (e.g. sending data out) — those come to you. Beyond the rights nothing is allowed, never force-push."
+ "ed.autoOn": "Claude works on its own within the rights: any command, no question for each step. Claude Code checks every step and still refuses risky ones (e.g. sending data out) — those come to you. Beyond the rights nothing is allowed, never force-push.",
+ "a.newTodo": "New to-do",
+ "todo.addPh": "New to-do … (Enter adds it)",
+ "todo.addWhere": "Section the to-do goes to",
+ "todo.addTop": "Top (no section)",
+ "todo.add": "Add",
+ "todo.addGo": "Add & do it",
+ "todo.addGoHint": "Adds the to-do and lets Claude work on it right away (Ctrl+Enter)",
+ "todo.added": "Added: {text}"
 }

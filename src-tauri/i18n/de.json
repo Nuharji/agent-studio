@@ -336,5 +336,13 @@
  "ed.auto": "Auto-Modus — nicht bei allem fragen",
  "ed.autoShort": "Auto-Modus",
  "ed.autoHint": "Aus: nur was die Rechte erlauben, alles andere kommt zur Freigabe zu dir.",
- "ed.autoOn": "Claude arbeitet innerhalb der Rechte selbstständig: jeder Befehl, keine Frage pro Schritt. Claude Code prüft jeden Schritt und lehnt riskante trotzdem ab (z. B. Daten nach außen schicken) — die kommen zu dir. Über die Rechte hinaus ist nichts erlaubt, nie Force-Push."
+ "ed.autoOn": "Claude arbeitet innerhalb der Rechte selbstständig: jeder Befehl, keine Frage pro Schritt. Claude Code prüft jeden Schritt und lehnt riskante trotzdem ab (z. B. Daten nach außen schicken) — die kommen zu dir. Über die Rechte hinaus ist nichts erlaubt, nie Force-Push.",
+ "a.newTodo": "Neues To-do",
+ "todo.addPh": "Neues To-do … (Enter fügt hinzu)",
+ "todo.addWhere": "Abschnitt, in den das To-do kommt",
+ "todo.addTop": "Oben (ohne Abschnitt)",
+ "todo.add": "Hinzufügen",
+ "todo.addGo": "Hinzufügen & machen",
+ "todo.addGoHint": "Fügt das To-do hinzu und lässt Claude gleich daran arbeiten (Strg+Enter)",
+ "todo.added": "Hinzugefügt: {text}"
 }

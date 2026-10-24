@@ -170,6 +170,7 @@ fn runs_clear(app: AppHandle) {
 #[derive(Serialize)]
 struct TodoFile {
     items: Vec<todo::Item>,
+    sections: Vec<String>,
     stamp: u64,
     error: Option<String>,
 }
@@ -182,8 +183,8 @@ fn stamp(p: &Path) -> u64 {
 fn todo_read(path: String) -> TodoFile {
     let p = Path::new(&path);
     match fs::read_to_string(p) {
-        Ok(s) => TodoFile { items: todo::parse(&s), stamp: stamp(p), error: None },
-        Err(e) => TodoFile { items: vec![], stamp: 0, error: Some(e.to_string()) },
+        Ok(s) => TodoFile { items: todo::parse(&s), sections: todo::sections(&s), stamp: stamp(p), error: None },
+        Err(e) => TodoFile { items: vec![], sections: vec![], stamp: 0, error: Some(e.to_string()) },
     }
 }
 
@@ -198,6 +199,15 @@ fn todo_tick(path: String, line: usize, text: String) -> Result<bool, String> {
     let Some(out) = todo::tick(&s, line, &text) else { return Ok(false) };
     fs::write(&path, out).map_err(|e| e.to_string())?;
     Ok(true)
+}
+
+/// Adds a new item at the end of a section; returns its line.
+#[tauri::command]
+fn todo_add(path: String, section: String, text: String) -> Result<usize, String> {
+    let s = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let (out, line) = todo::add(&s, &section, &text).ok_or("empty")?;
+    fs::write(&path, out).map_err(|e| e.to_string())?;
+    Ok(line)
 }
 
 #[tauri::command]
@@ -339,6 +349,7 @@ fn main() {
             todo_read,
             todo_stamps,
             todo_tick,
+            todo_add,
             pick_folder,
             pick_file,
             pick_files,
