@@ -97,6 +97,7 @@ fn changed(app: &AppHandle) {
     let st = app.state::<Agent>();
     let d = st.data.lock().unwrap();
     save(app, &d);
+    crate::link::write_status(app, &d);
     drop(d);
     let _ = app.emit("runs-changed", ());
 }
@@ -145,6 +146,7 @@ pub fn start(app: &AppHandle, mut spec: Spec) -> Result<String, String> {
         }
     }
     changed(app);
+    crate::link::report(app, &run);
     let app2 = app.clone();
     std::thread::spawn(move || execute(app2, run, exe));
     Ok(id)
@@ -247,6 +249,7 @@ fn finish(app: &AppHandle, id: &str, result: Option<runner::Ev>, err: String, ex
     if let Some(it) = item.clone() { d.inbox.insert(0, it); }
     drop(d);
     if let Some(it) = item { notify(app, &it); }
+    crate::link::report(app, &r);
     let line = match r.status.as_str() {
         "done" => if de { "Fertig" } else { "Done" },
         "needsYou" => if de { "Braucht dich" } else { "Needs you" },

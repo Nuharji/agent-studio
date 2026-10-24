@@ -401,5 +401,21 @@
  "chat.fresh": "New conversation",
  "chat.thinking": "Claude is thinking …",
  "chat.replyPh": "Reply to Claude …",
- "chat.badge": "Chat"
+ "chat.badge": "Chat",
+ "link.p.head": "Task from {app}:",
+ "link.p.files": "Files:",
+ "link.p.sel": "Selected text:",
+ "link.p.content": "Content (not saved as a file):",
+ "link.p.out": "Your answer is shown in {app}. When the result should be a file, save it as a new file next to the original (overwrite the original only when the task asks for that) and name the file in your answer.",
+ "link.p.format": "At the very end of your answer, write exactly one block ```studio-result with JSON in this shape: {f}",
+ "link.off": "Agent Studio takes no tasks from other apps right now (Settings → Control).",
+ "link.limit": "The daily limit of {n} minutes is reached.",
+ "link.failed": "The run could not be started — see Agent Studio.",
+ "link.started": "Task from {app}: {title}",
+ "link.title": "Tasks from other Studio apps",
+ "link.hint": "Markdown, PDF, Data, Slides and Plan Studio can send a file or a selection with a task (“Send to Agent Studio”). It runs as a chat here; the answer and new files go back to the app. It is never allowed to commit, push or delete.",
+ "link.accept": "Take tasks from other Studio apps",
+ "link.web": "They may use the internet (when the app asks for it)",
+ "link.level": "At most",
+ "link.levelEdit": "Change files in the file's folder"
 }

@@ -401,5 +401,21 @@
  "chat.fresh": "Neues Gespräch",
  "chat.thinking": "Claude denkt nach …",
  "chat.replyPh": "Claude antworten …",
- "chat.badge": "Chat"
+ "chat.badge": "Chat",
+ "link.p.head": "Auftrag aus {app}:",
+ "link.p.files": "Dateien:",
+ "link.p.sel": "Markierter Text:",
+ "link.p.content": "Inhalt (nicht als Datei gespeichert):",
+ "link.p.out": "Deine Antwort wird in {app} angezeigt. Soll das Ergebnis eine Datei sein, lege sie als neue Datei neben der Originaldatei an (überschreibe das Original nur, wenn der Auftrag das ausdrücklich verlangt) und nenne den Dateinamen in deiner Antwort.",
+ "link.p.format": "Schreibe ganz am Ende deiner Antwort genau einen Block ```studio-result mit JSON in diesem Aufbau: {f}",
+ "link.off": "Agent Studio nimmt gerade keine Aufträge aus anderen Apps an (Einstellungen → Kontrolle).",
+ "link.limit": "Das Tageslimit von {n} Minuten ist erreicht.",
+ "link.failed": "Der Lauf ließ sich nicht starten — siehe Agent Studio.",
+ "link.started": "Auftrag aus {app}: {title}",
+ "link.title": "Aufträge aus anderen Studio-Apps",
+ "link.hint": "Markdown, PDF, Data, Slides und Plan Studio können eine Datei oder Auswahl mit einem Auftrag schicken („An Agent Studio senden“). Er läuft hier als Chat; Antwort und neue Dateien gehen zurück an die App. Committen, Pushen und Löschen darf er nie.",
+ "link.accept": "Aufträge aus anderen Studio-Apps annehmen",
+ "link.web": "Sie dürfen ins Internet (wenn die App es möchte)",
+ "link.level": "Höchstens",
+ "link.levelEdit": "Dateien im Ordner der Datei ändern"
 }

@@ -52,6 +52,8 @@ pub struct Spec {
     pub chat: bool,
     /// What the person wrote for this step (shown in the chat; `prompt` may hold more, e.g. an expanded command).
     pub said: String,
+    /// The Studio app that sent this task (link.rs), when one did.
+    pub origin: Option<crate::link::Origin>,
 }
 
 const LEVELS: [&str; 4] = ["read", "edit", "commit", "publish"];

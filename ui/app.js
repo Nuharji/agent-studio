@@ -59,6 +59,7 @@ let settings = {...DEF}, booted = false;
 const newCfg = () => ({version: 1, routines: [], todoFiles: [],
   todo: {dirs: [], level: 'edit', commands: '', web: false, noDelete: true, maxMinutes: 30, prompt: ''},
   chat: {dirs: [], level: 'read', web: true, auto: false, noDelete: true, maxMinutes: 30, model: ''},
+  link: {accept: true, level: 'edit', web: true},
   rules: '', dailyMinutes: 0, claude: '', model: '', ticked: [], doneNotes: true});
 let cfg = newCfg();
 let data = {runs: [], inbox: [], running: []};
@@ -483,7 +484,7 @@ function viewHistory() {
     const st = stOf(r), files = r.repos.reduce((n, x) => n + x.files.length, 0), commits = r.repos.reduce((n, x) => n + x.commits.length, 0);
     h += `<div class="row${sel && sel.id === r.id ? ' sel' : ''}" data-run="${esc(r.id)}"><span class="dot ${esc(st)}"></span>
       <span class="meta" style="width:44px">${esc(new Date(r.started).toLocaleTimeString(locale(), {hour: '2-digit', minute: '2-digit'}))}</span>
-      <span class="grow">${r.spec.continues ? '↳ ' : ''}${r.spec.chat ? `<span class="badge">${esc(t('chat.badge'))}</span> ` : ''}${esc(r.spec.title)}</span>
+      <span class="grow">${r.spec.continues ? '↳ ' : ''}${r.spec.origin ? `<span class="badge">${esc(r.spec.origin.app)}</span> ` : r.spec.chat ? `<span class="badge">${esc(t('chat.badge'))}</span> ` : ''}${esc(r.spec.title)}</span>
       ${commits ? `<span class="meta">${esc(tn('run.commitsN', commits))}</span>` : files ? `<span class="meta">${esc(tn('run.filesN', files))}</span>` : ''}
       <span class="meta">${esc(fmtDur((r.ended || Date.now()) - r.started))}</span>${statusBadge(st)}</div>`;
   }
@@ -514,7 +515,7 @@ function viewChats() {
   for (const {f, l} of chats) {
     const st = stOf(l), n = chainOf(l).length;
     h += `<div class="row${sel && sel.type === 'run' && chainOf(l).some(x => x.id === sel.id) ? ' sel' : ''}" data-chat-open="${esc(l.id)}"><span class="dot ${esc(st)}"></span>
-      <span class="grow" title="${esc(f.spec.said || f.spec.prompt)}">${esc(f.spec.title)}</span>
+      <span class="grow" title="${esc(f.spec.said || f.spec.prompt)}">${f.spec.origin ? `<span class="badge">${esc(f.spec.origin.app)}</span> ` : ''}${esc(f.spec.title)}</span>
       <span class="meta">${esc(tn('chat.msgs', n))}</span><span class="meta" style="min-width:110px;text-align:right">${esc(fmtWhen(l.started))}</span>
       ${st === 'done' ? '' : statusBadge(st)}</div>`;
   }
@@ -529,6 +530,45 @@ async function startChat() {
   newChatDraft = '';
   openFull(id);
 }
+/* ================= Other Studio apps ================= */
+/* Tasks the other Studio apps send ("Send to Agent Studio"; Rust: link.rs, agentlink.rs) start as chats: the answer
+   and the files Claude made go back to the app, questions and approvals come to "Needs you" like any other. Their
+   rights: reading, or changing files in the file's folder when the app asks for it and Settings allow it; never commit,
+   push or delete. */
+const dirOf = p => String(p).replace(/[\\/][^\\/]*$/, '') || p;
+function taskPrompt(x) {
+  let p = t('link.p.head', {app: x.app}) + '\n' + x.task.trim();
+  if (x.files.length) p += '\n\n' + t('link.p.files') + '\n' + x.files.map(f => '- ' + f).join('\n');
+  if (x.selection) p += '\n\n' + t('link.p.sel') + '\n```\n' + x.selection + '\n```';
+  if (x.content) p += '\n\n' + t('link.p.content') + '\n```\n' + x.content + '\n```';
+  p += '\n\n' + t('link.p.out', {app: x.app});
+  if (x.format) p += '\n' + t('link.p.format', {f: x.format});
+  return p;
+}
+function taskSpec(x) {
+  const dirs = [];
+  for (const d of [...x.files.map(dirOf), x.dir].filter(Boolean)) if (!dirs.includes(d)) dirs.push(d);
+  const level = cfg.link.level === 'edit' && x.level === 'edit' && dirs.length ? 'edit' : 'read';
+  const title = x.title || x.task.split('\n')[0].slice(0, 60);
+  const said = x.task.trim() + (x.files.length ? '\n' + x.files.map(f => '📄 ' + baseName(f)).join('\n') : '');
+  return specFrom({...cfg.chat, id: null, name: '', title: `${x.app}: ${title}`, dirs, level, web: !!(x.web && cfg.link.web), auto: false, noDelete: true, commands: ''},
+    {prompt: taskPrompt(x), said, chat: true, origin: {app: x.app, task: x.id, title, created: x.created || Date.now()}});
+}
+let taking = false;
+async function takeTasks() {
+  if (!invoke || !booted || taking) return;
+  taking = true;
+  try {
+    for (const x of await invoke('link_take').catch(() => [])) {
+      if (!cfg.link.accept) { invoke('link_decline', {task: x, why: t('link.off')}); continue; }
+      if (overLimit()) { invoke('link_decline', {task: x, why: t('link.limit', {n: cfg.dailyMinutes})}); continue; }
+      const id = await startRun(taskSpec(x), {show: false, manual: false});
+      if (id) toast(t('link.started', {app: x.app, title: x.title || ''}));
+      else invoke('link_decline', {task: x, why: t('link.failed')});
+    }
+  } finally { taking = false; }
+}
+
 /* A little Markdown for Claude's answers: code blocks, `code`, **bold**, headings. */
 function md(text) {
   const inline = p => esc(p).replace(/^#{1,6} +(.+)$/gm, '<b class="md-h">$1</b>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/`([^`\n]+)`/g, '<code>$1</code>');
@@ -1288,7 +1328,10 @@ function renderSettings() {
       <h3>${esc(t('ctl.limit'))}</h3><p class="hint">${esc(t('ctl.limitHint'))}</p>
       <select class="wide-sel" data-set="dailyMinutes">${[0, 30, 60, 120, 180, 300, 480].map(n => opt(n, n ? t('ctl.limitN', {n}) : t('ctl.limit0'), cfg.dailyMinutes || 0)).join('')}</select>
       <p class="hint">${esc(t('stat.usage', {n: used}))}</p>${+cfg.dailyMinutes > 0 ? `<div class="usage"><i style="width:${Math.min(100, used / cfg.dailyMinutes * 100)}%"></i></div>` : ''}
-      <h3>${esc(t('ctl.safety'))}</h3><p class="hint">${esc(t('ctl.safetyHint'))}</p>`,
+      <h3>${esc(t('ctl.safety'))}</h3><p class="hint">${esc(t('ctl.safetyHint'))}</p>
+      <h3>${esc(t('link.title'))}</h3><p class="hint">${esc(t('link.hint'))}</p>
+      ${sw('linkAccept', t('link.accept'), cfg.link.accept)}${sw('linkWeb', t('link.web'), cfg.link.web)}
+      <div class="ed-field" style="max-width:420px"><label>${esc(t('link.level'))}</label><select class="wide-sel" data-set="linkLevel">${opt('read', t('lv.read'), cfg.link.level)}${opt('edit', t('link.levelEdit'), cfg.link.level)}</select></div>`,
     appearance: `<h3>${esc(t('set.theme'))}</h3><div class="theme-grid">` + THEMES.map(th =>
       `<button class="theme-card${settings.theme === th ? ' active' : ''}" data-theme-pick="${th}">${mock(th)}
        <div class="theme-name">${esc(t('theme.' + th))}<span>${settings.theme === th ? '&#10003;' : ''}</span></div></button>`).join('') + '</div>',
@@ -1316,6 +1359,8 @@ function renderSettings() {
     if (k === 'lang') { setLang(e.target.value); renderSettings(); return; }
     if (k === 'dock' || k === 'autoHide') { settings[k] = e.target.checked; applySettings(); return; }
     if (k === 'doneNotes') { cfg.doneNotes = e.target.checked; saveCfg(); refresh(); return; }
+    if (k === 'linkAccept' || k === 'linkWeb') { cfg.link[k === 'linkAccept' ? 'accept' : 'web'] = e.target.checked; saveCfg(); return; }
+    if (k === 'linkLevel') { cfg.link.level = e.target.value; saveCfg(); return; }
     if (k === 'dailyMinutes') { cfg.dailyMinutes = +e.target.value; limitNoted = false; saveCfg(); updateStatus(); renderSettings(); return; }
     if (k === 'model') { cfg.model = e.target.value; saveCfg(); return; }
     if (k === 'claude') { cfg.claude = e.target.value.trim(); saveCfg(); checkClaude(); }
@@ -1386,7 +1431,7 @@ window.addEventListener('keydown', e => {
 }
 
 /* Test hook (like Plan Studio's __pl). */
-window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel() { return sel; }, set sel(v) { sel = v; renderAll(); }, A, run, setView, specFrom, lastSlot, nextSlot, planTick, refresh};
+window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel() { return sel; }, set sel(v) { sel = v; renderAll(); }, A, run, setView, specFrom, lastSlot, nextSlot, planTick, refresh, taskSpec, takeTasks};
 
 /* ================= Boot ================= */
 (async function boot() {
@@ -1408,6 +1453,7 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
     cfg = {...newCfg(), ...(c || {})};
     cfg.todo = {...newCfg().todo, ...(cfg.todo || {})};
     cfg.chat = {...newCfg().chat, ...(cfg.chat || {})};
+    cfg.link = {...newCfg().link, ...(cfg.link || {})};
     if (invoke) invoke('config_save', {content: JSON.stringify(cfg, null, 1), claude: cfg.claude || ''}).catch(() => {});
   } catch (e) { cfg = newCfg(); toast(t('toast.loadFail', {e})); }
   await Promise.all(cfg.todoFiles.map(f => loadTodo(f.path)));
@@ -1418,6 +1464,8 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
   checkClaude();
   if (invoke) {
     listen('runs-changed', refreshSoon);
+    listen('link-task', takeTasks);
+    takeTasks();
     listen('run-log', e => {
       const {id, line} = e.payload;
       const r = runOf(id); if (r && (line.kind === 'tool' || line.kind === 'text')) r.last = line.text.slice(0, 200);

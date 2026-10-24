@@ -11,7 +11,13 @@ Unlike the other Studio apps it needs the internet and a Claude account: the wor
 [Claude Code](https://claude.com/claude-code) (the `claude` program) with **your own sign-in**. Agent Studio stores no
 API key and no password; routines, logs and history stay on your computer.
 
-## Features (0.7.0)
+## Features (0.8.0)
+- **Linked with the other Studio apps:** Markdown, PDF, Data, Slides and Plan Studio have **"Send to Agent Studio"**
+  (Ctrl+Shift+A) — a file or a selection with a task (proofread, summarize, quiz, explain the data, slides from an
+  outline …). It runs here as a chat marked with the app's name; the answer and the files Claude made go back to the
+  app as a card (open them there with one click). Rights: read, or change files in the file's folder — never commit,
+  push or delete (Settings → Control). Studio Hub shows what needs you on the Agent Studio card; Plan Studio has a
+  morning overview in Today, homework and dates in your own words ("Maths p. 34 by Thursday") and study plan suggestions.
 - **Chats** like in the Claude desktop app, outside of to-dos and routines: ask Claude anything in the big box of the
   Chats view (Ctrl+K) — no folder needed (or pick one), rights, internet and model right in the box. The chat is a
   conversation with bubbles and answers in a little Markdown, the steps on request, and goes on in the same session;
@@ -64,12 +70,21 @@ refused tools of the run), and tells Claude how to ask: a ```` ```agent-studio `
 prompt goes to its input. Refused tool calls (`permission_denials`) and that block become items of "Needs you"; an
 answer or an approval continues the session (`--resume`), an approval with exactly that one command allowed.
 
+## How the apps talk to Agent Studio
+Through files in `Studio/agent/` next to the shared settings (macOS: `~/Library/Application Support/Studio/agent`,
+Windows: `%APPDATA%\Studio\agent`): an app writes a task to `inbox/<id>.json` (`agentlink.rs`, the same file in every
+app, with `agentlink.js` for the dialog and the result cards) and starts Agent Studio when its heartbeat is old.
+Agent Studio takes it, starts a chat and keeps `outbox/<id>.json` up to date (status, answer, new files, and data from a
+```` ```studio-result ```` block, e.g. Plan Studio's entries); the app removes it once seen. `status.json` holds what
+needs you, what runs, what was done and a heartbeat.
+
 ## Layout
 ```
 ui/                 index.html, app.js; native.js, autohide.js, shortcuts.js, shared.js (the same in every Studio app)
 src-tauri/src/      main.rs — commands; runner.rs — rights, arguments, reading Claude's output, git (changes, diff, undo);
                     runs.rs — runs, logs, the box, notifications; todo.rs — Markdown checkboxes; slash.rs — own slash commands and skills;
-                    shared.rs — shared settings
+                    shared.rs — shared settings; agentlink.rs — the link to the other apps (the same in every app);
+                    link.rs — Agent Studio's side of it: tasks in, results out, status.json
 src-tauri/i18n/     en.json, de.json — all texts
 ```
 

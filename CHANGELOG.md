@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.8.0 — 2026-10-24
+- Strongly linked with the other Studio apps. Markdown, PDF, Data, Slides and Plan Studio get "Send to Agent Studio": a
+  file or a selection with a task (e.g. proofread, summarize, make a quiz, explain the data, slides from an outline).
+  - Agent Studio takes such tasks at once (it is started when it isn't open) and runs them as a chat, marked with the
+    app's name in Chats and History. The answer and the files Claude made go back to the app as a card in the corner.
+  - Rights: reading, or changing files in the file's folder when the app asks for it — never commit, push or delete.
+    Settings → Control → "Tasks from other Studio apps": take them or not, at most read / change files, internet.
+  - Questions and approvals come to "Needs you" as always; the app's card says that Agent Studio needs you.
+- Agent Studio keeps a status for the other apps (what needs you, what runs, what was done today): Studio Hub shows it on
+  the Agent Studio card, Plan Studio as a morning overview in Today.
+- How it works: the apps and Agent Studio share the folder Studio/agent next to the shared settings (inbox, outbox,
+  status.json); the code is the same file in every app (agentlink.rs / agentlink.js).
+
 ## 0.7.0 — 2026-10-24
 - Normal chats outside of the to-dos, like in the Claude desktop app: the new view **Chats** (Alt+5, Agent → New chat,
   Ctrl+K) starts with a big box "How can I help?" — Enter sends, Shift+Enter makes a new line.

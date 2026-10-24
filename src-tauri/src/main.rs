@@ -1,6 +1,8 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod agentlink;
+mod link;
 mod runner;
 mod runs;
 mod shared;
@@ -183,6 +185,14 @@ fn runs_clear(app: AppHandle) {
     runs::touched(&app);
 }
 
+/// The tasks other Studio apps sent (link.rs); the UI starts them as runs.
+#[tauri::command]
+fn link_take(app: AppHandle) -> Vec<serde_json::Value> { link::take(&app) }
+
+/// A task that is not started (taking tasks is off, the daily limit …): the app that sent it is told why.
+#[tauri::command]
+fn link_decline(app: AppHandle, task: serde_json::Value, why: String) { link::decline(&app, &task, &why) }
+
 #[derive(Serialize)]
 struct TodoFile {
     items: Vec<todo::Item>,
@@ -337,6 +347,19 @@ fn main() {
             let data = runs::load(h);
             runs::save(h, &data);
             *app.state::<runs::Agent>().data.lock().unwrap() = data;
+            // The heartbeat in status.json: the other apps see that Agent Studio is open; a task they send wakes the UI.
+            let h = h.clone();
+            std::thread::spawn(move || {
+                let mut n = 0u32;
+                loop {
+                    if n % 10 == 0 { link::write_status(&h, &h.state::<runs::Agent>().data.lock().unwrap()); }
+                    if agentlink::dir(&h).is_some_and(|d| std::fs::read_dir(d.join("inbox")).into_iter().flatten().flatten().next().is_some()) {
+                        let _ = h.emit("link-task", ());
+                    }
+                    n = n.wrapping_add(1);
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                }
+            });
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -345,6 +368,13 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             shared::shared_get,
             shared::shared_set,
+            agentlink::agent_poll,
+            agentlink::agent_send,
+            agentlink::agent_ack,
+            agentlink::agent_open,
+            agentlink::agent_open_file,
+            link_take,
+            link_decline,
             texts,
             config_load,
             config_save,
