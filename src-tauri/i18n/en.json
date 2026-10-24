@@ -347,5 +347,8 @@
  "todo.added": "Added: {text}",
  "a.openFull": "Task in full view",
  "full.open": "Full view",
- "full.back": "Back"
+ "full.back": "Back",
+ "full.chatPh": "Reply or tell Claude something new…",
+ "full.chatBusy": "Claude is working – you can already type ahead…",
+ "full.chatFoot": "Enter sends · Shift+Enter for a new line · goes on in the same conversation, with the same rights"
 }

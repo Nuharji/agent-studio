@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 — 2026-10-24
+- A chat box like in the Claude desktop app in the full view: pinned to the bottom of the window, rounded, it grows with
+  the text (up to 40 % of the window) and keeps its height and cursor when the run is redrawn. Enter sends, Shift+Enter
+  makes a new line; the round button sends — or stops the run while Claude is working (you can already type ahead).
+  The rights, auto mode and model of the conversation are shown in the box; it gets the focus when the full view opens.
+- In the side panel Ctrl+Enter sends the message to Claude.
+
 ## 0.4.0 — 2026-10-24
 - Tasks in full view: a run fills the whole window instead of the side panel — View → Task in full view (Alt+Enter),
   a double-click on a run (Needs you, to-dos, history), "Full view" in the panel or ⤢ on a card in "Needs you". The

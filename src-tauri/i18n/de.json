@@ -347,5 +347,8 @@
  "todo.added": "Hinzugefügt: {text}",
  "a.openFull": "Task im Vollbild",
  "full.open": "Vollbild",
- "full.back": "Zurück"
+ "full.back": "Zurück",
+ "full.chatPh": "Antworten oder Claude etwas Neues sagen …",
+ "full.chatBusy": "Claude arbeitet gerade – du kannst schon weiterschreiben …",
+ "full.chatFoot": "Enter sendet · Umschalt+Enter für eine neue Zeile · geht im selben Gespräch weiter, mit denselben Rechten"
 }

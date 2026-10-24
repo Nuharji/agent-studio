@@ -325,8 +325,8 @@ function setView(v) { settings.view = v; full = null; saveSettings(); renderAll(
 function renderAll() { renderView(); renderDetails(); updateStatus(); syncTools(); $('#dock').classList.toggle('hidden', !settings.dock || !!full); }
 function renderView() {
   const box = $('#view');
-  const keep = box.scrollTop, a = document.activeElement, typingIn = a && box.contains(a) && a.dataset.addText;
-  const caret = typingIn ? [a.selectionStart, a.selectionEnd] : null;
+  const keep = box.scrollTop, a = document.activeElement, typingIn = a && box.contains(a) && a.dataset.addText, chatting = a && box.contains(a) && a.dataset.chatIn;
+  const caret = typingIn || chatting ? [a.selectionStart, a.selectionEnd] : null;
   if (full && !runOf(full)) full = null;
   box.classList.toggle('full', !!full);
   box.innerHTML = full ? viewFull(runOf(full)) : {inbox: viewInbox, todos: viewTodos, routines: viewRoutines, history: viewHistory}[settings.view]();
@@ -335,6 +335,9 @@ function renderView() {
   // A new to-do being typed stays focused when the lists are redrawn (e.g. because the file changed).
   const el = typingIn && box.querySelector(`[data-add-text="${CSS.escape(typingIn)}"]`);
   if (el) { el.focus({preventScroll: true}); el.setSelectionRange(...caret); }
+  // The same for the chat box of the full view; it also keeps the height it has grown to.
+  const c = box.querySelector('[data-grow]');
+  if (c) { growChat(c); if (chatting === c.dataset.chatIn) { c.focus({preventScroll: true}); c.setSelectionRange(...caret); } }
 }
 const statusBadge = st => `<span class="badge ${({running: 'blue', done: 'ok', needsYou: 'warn', failed: 'red', timeout: 'red'})[st] || ''}">${esc(t('st.' + st))}</span>`;
 const levelBadge = l => `<span class="badge${l === 'publish' ? ' warn' : ''}">${esc(t('lv.' + l))}</span>`;
@@ -528,7 +531,7 @@ function loadLog(r) {
 }
 /* A task in full view: the whole window instead of the panel (Alt+Enter, double-click, "Full view"). */
 let full = null;         // run id shown in full view
-function openFull(id) { if (!runOf(id)) return; full = id; sel = {type: 'run', id}; renderAll(); $('#view').scrollTop = 0; }
+function openFull(id) { if (!runOf(id)) return; full = id; sel = {type: 'run', id}; renderAll(); $('#view').scrollTop = 0; const c = $('#chatIn'); if (c) c.focus({preventScroll: true}); }
 function closeFull() { full = null; renderAll(); }
 function showRun(id) { sel = {type: 'run', id}; if (full) full = id; renderAll(); }
 function viewFull(r) {
@@ -536,9 +539,21 @@ function viewFull(r) {
   return `<div class="full-run"><div class="view-title"><button class="btn-sm" data-full-close title="${esc(t('full.back'))} (Esc)">&larr; ${esc(t('full.back'))}</button>
       <h1>${esc(r.spec.title)}</h1>${statusBadge(p.st)}<span class="flex"></span>${p.actions}</div>
     ${notes.map(i => itemCard(i, true)).join('')}
-    <div class="full-grid"><div class="full-main">${p.result}${notes.length ? '' : p.needs}${p.log}${p.chat}</div>
-      <aside class="pcard full-side">${p.info}${p.changes}</aside></div></div>`;
+    <div class="full-grid"><div class="full-main">${p.result}${notes.length ? '' : p.needs}${p.log}</div>
+      <aside class="pcard full-side">${p.info}${p.changes}</aside></div>${composer(r, p.st)}</div>`;
 }
+/* The chat box of the full view, like in the Claude desktop app: pinned to the bottom, grows with the text,
+   Enter sends (Shift+Enter: new line), the round button stops the run while Claude is working. */
+function composer(r, st) {
+  const running = st === 'running';
+  return `<div class="composer-wrap"><div class="composer${running ? ' busy' : ''}">
+      <textarea id="chatIn" rows="1" data-chat-in="${esc(r.id)}" data-grow placeholder="${esc(t(running ? 'full.chatBusy' : 'full.chatPh'))}">${esc(chatDraft[r.id] || '')}</textarea>
+      <div class="composer-bar"><span class="composer-tag" title="${esc(t('det.chatHint'))}">${esc(t('lv.' + r.spec.level))}${r.spec.auto ? ' · ' + esc(t('ed.autoShort')) : ''}${r.spec.model ? ' · ' + esc(t('model.' + r.spec.model)) : ''}</span><span class="flex"></span>
+        ${running ? `<button class="composer-btn stop" data-stop="${esc(r.id)}" title="${esc(t('run.stop'))}"><i></i></button>`
+          : `<button class="composer-btn" data-chat="${esc(r.id)}" title="${esc(t('det.send'))} (Enter)"${chatDraft[r.id] && chatDraft[r.id].trim() ? '' : ' disabled'}>&uarr;</button>`}</div></div>
+    <div class="composer-foot">${esc(t('full.chatFoot'))}</div></div>`;
+}
+const growChat = el => { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, Math.round(innerHeight * 0.4)) + 'px'; };
 const logLine = l => `<div class="${esc(l.kind)}"><time>${esc(new Date(l.t).toLocaleTimeString(locale()))}</time>${esc(l.text)}</div>`;
 function scrollLog(force) { const el = $('#runLog'); if (el && (force || el.scrollHeight - el.scrollTop - el.clientHeight < 60)) el.scrollTop = el.scrollHeight; }
 function dirsField(dirs, key) {
@@ -718,7 +733,21 @@ $('#view').addEventListener('dblclick', e => {
   if (b && !e.target.closest('button,input,select,textarea,a')) openFull(b.dataset.run);
 });
 // The message to Claude being typed stays when the run's details are redrawn (panel and full view).
-document.addEventListener('input', e => { const id = e.target.dataset && e.target.dataset.chatIn; if (id) chatDraft[id] = e.target.value; });
+document.addEventListener('input', e => {
+  const id = e.target.dataset && e.target.dataset.chatIn; if (!id) return;
+  chatDraft[id] = e.target.value;
+  if (e.target.dataset.grow !== undefined) { growChat(e.target); const b = $(`[data-chat="${CSS.escape(id)}"]`); if (b) b.disabled = !e.target.value.trim(); }
+});
+// Enter sends in the chat box of the full view (Shift+Enter: new line), Ctrl+Enter in the panel.
+document.addEventListener('keydown', e => {
+  const id = e.target.dataset && e.target.dataset.chatIn;
+  if (!id || e.key !== 'Enter' || e.isComposing) return;
+  const big = e.target.dataset.grow !== undefined;
+  if (big ? e.shiftKey : !(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault(); e.stopPropagation();
+  const b = $(`[data-chat="${CSS.escape(id)}"]`);
+  if (b && !b.disabled) b.click();
+}, true);
 $('#view').addEventListener('keydown', e => {
   const p = e.target.dataset && e.target.dataset.addText;
   if (p && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); return addItem(p, e.metaKey || e.ctrlKey); }
