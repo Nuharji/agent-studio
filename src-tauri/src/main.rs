@@ -4,6 +4,7 @@
 mod runner;
 mod runs;
 mod shared;
+mod slash;
 mod todo;
 
 use serde::{Deserialize, Serialize};
@@ -143,7 +144,22 @@ fn run_undo(app: AppHandle, id: String) -> Result<usize, String> {
 
 /// Goes on with a run (a message in its chat).
 #[tauri::command]
-fn run_message(app: AppHandle, id: String, text: String) -> Result<String, String> { runs::continue_run(&app, &id, text, vec![]) }
+fn run_message(app: AppHandle, id: String, text: String, opts: Option<runs::MsgOpts>) -> Result<String, String> {
+    runs::continue_with(&app, &id, text, vec![], opts.unwrap_or_default())
+}
+
+/// The person's own slash commands and skills for a run in these folders (~/.claude and <dir>/.claude).
+#[tauri::command]
+fn slash_list(dirs: Vec<String>) -> Vec<slash::Cmd> {
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(std::path::PathBuf::from).unwrap_or_default();
+    slash::list(&home, &dirs)
+}
+
+/// The text sent to Claude for "/name args".
+#[tauri::command]
+fn slash_expand(path: String, kind: String, name: String, args: String, lang: String) -> Result<String, String> {
+    slash::expand(&path, &kind, &name, &args, lang == "de")
+}
 
 #[tauri::command]
 fn inbox_answer(app: AppHandle, id: String, text: String, approve: Option<bool>) -> Result<Option<String>, String> { runs::answer(&app, &id, text, approve) }
@@ -343,6 +359,8 @@ fn main() {
             run_diff,
             run_undo,
             run_message,
+            slash_list,
+            slash_expand,
             inbox_answer,
             inbox_dismiss,
             runs_clear,

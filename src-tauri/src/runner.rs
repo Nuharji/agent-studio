@@ -32,6 +32,8 @@ pub struct Spec {
     pub no_delete: bool,
     /// Only plan: say what would be done, change nothing.
     pub plan_only: bool,
+    /// plan_only is only for this step (/plan in the chat box).
+    pub plan_once: bool,
     /// Auto mode: Claude Code decides itself which steps are safe (no question for each one); the level stays the limit.
     pub auto: bool,
     pub max_minutes: u32,

@@ -298,21 +298,49 @@ pub fn stop(app: &AppHandle, id: &str) -> bool {
 
 pub fn running(app: &AppHandle) -> Vec<String> { app.state::<Agent>().pids.lock().unwrap().keys().cloned().collect() }
 
+/// What a message from the chat box changes for the next step (the slash commands /clear, /model and /plan).
+#[derive(Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MsgOpts {
+    /// A new conversation (/clear): not the same Claude Code session, only this message as the prompt.
+    pub fresh: bool,
+    /// Another model from now on ("" = the standard one).
+    pub model: Option<String>,
+    /// Only plan this one step (/plan); the next message works normally again.
+    pub plan: bool,
+}
+
 /// Goes on with a run: an answer, an approval or a further message. The same Claude Code session when there is one.
 pub fn continue_run(app: &AppHandle, run_id: &str, prompt: String, allow: Vec<String>) -> Result<String, String> {
+    continue_with(app, run_id, prompt, allow, MsgOpts::default())
+}
+
+pub fn continue_with(app: &AppHandle, run_id: &str, prompt: String, allow: Vec<String>, o: MsgOpts) -> Result<String, String> {
     let r = app.state::<Agent>().data.lock().unwrap().runs.iter().find(|r| r.id == run_id).cloned().ok_or("run not found")?;
+    start(app, next_spec(&r, prompt, allow, o))
+}
+
+/// The spec of the run that goes on from `r`.
+pub fn next_spec(r: &Run, prompt: String, allow: Vec<String>, o: MsgOpts) -> Spec {
     let mut spec = r.spec.clone();
     spec.continues = Some(r.id.clone());
     spec.allow_once.extend(allow);
     spec.allow_once.dedup();
-    if r.session_id.is_empty() {
+    if spec.plan_once { spec.plan_only = false; spec.plan_once = false; }
+    if o.plan && !spec.plan_only { spec.plan_only = true; spec.plan_once = true; }
+    if let Some(m) = o.model { spec.model = m.trim().to_string(); }
+    if o.fresh {
+        spec.resume = None;
+        spec.allow_once.clear();
+        spec.prompt = prompt;
+    } else if r.session_id.is_empty() {
         spec.resume = None;
         spec.prompt = format!("{}\n\n{}", r.spec.prompt, prompt);
     } else {
         spec.resume = Some(r.session_id.clone());
         spec.prompt = prompt;
     }
-    start(app, spec)
+    spec
 }
 
 /// The answer to an item of the box: `approve` for approvals (true = allow, false = refuse), `text` the answer or
@@ -370,5 +398,26 @@ mod tests {
         r.status = "done".into();
         r.summary = "Alles gut".into();
         assert_eq!(inbox_item(&r).unwrap().kind, "done");
+    }
+
+    #[test]
+    fn a_message_goes_on_as_wanted() {
+        let r = Run { id: "r1".into(), session_id: "s1".into(), spec: Spec { prompt: "Erst".into(), model: "opus".into(), allow_once: vec!["Write".into()], ..Default::default() }, ..Default::default() };
+        let s = next_spec(&r, "Weiter".into(), vec![], MsgOpts::default());
+        assert_eq!((s.resume.as_deref(), s.prompt.as_str(), s.model.as_str(), s.continues.as_deref()), (Some("s1"), "Weiter", "opus", Some("r1")));
+        let s = next_spec(&r, "Neu".into(), vec![], MsgOpts { fresh: true, model: Some("haiku".into()), plan: false });
+        assert_eq!((s.resume, s.prompt.as_str(), s.model.as_str()), (None, "Neu", "haiku"));
+        assert!(s.allow_once.is_empty(), "/clear forgets approvals of the old conversation");
+        // /plan only for one step.
+        let s = next_spec(&r, "Plane".into(), vec![], MsgOpts { plan: true, ..Default::default() });
+        assert!(s.plan_only && s.plan_once);
+        let after = next_spec(&Run { spec: s, ..r.clone() }, "Mach".into(), vec![], MsgOpts::default());
+        assert!(!after.plan_only && !after.plan_once);
+        // A run that only plans anyway stays so.
+        let mut p = r.clone();
+        p.spec.plan_only = true;
+        let s = next_spec(&p, "x".into(), vec![], MsgOpts { plan: true, ..Default::default() });
+        assert!(s.plan_only && !s.plan_once);
+        assert!(next_spec(&p, "x".into(), vec![], MsgOpts::default()).plan_only);
     }
 }

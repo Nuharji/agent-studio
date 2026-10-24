@@ -322,7 +322,11 @@ $('#modalBody').addEventListener('click', e => {
 /* ================= Views ================= */
 const VIEWS = ['inbox', 'todos', 'routines', 'history'];
 function setView(v) { settings.view = v; full = null; saveSettings(); renderAll(); }
-function renderAll() { renderView(); renderDetails(); updateStatus(); syncTools(); $('#dock').classList.toggle('hidden', !settings.dock || !!full); }
+function renderAll() {
+  renderView(); renderDetails(); updateStatus(); syncTools(); $('#dock').classList.toggle('hidden', !settings.dock || !!full);
+  const a = document.activeElement;   // the menu of slash commands stays open while the run is redrawn
+  if (slash && a && a.dataset.chatIn && a.value.startsWith('/')) slashMenu(a);
+}
 function renderView() {
   const box = $('#view');
   const keep = box.scrollTop, a = document.activeElement, typingIn = a && box.contains(a) && a.dataset.addText, chatting = a && box.contains(a) && a.dataset.chatIn;
@@ -513,7 +517,7 @@ function runParts(r) {
     + (commits.length ? `<div class="group-h">${esc(t('det.commits'))}${r.undone ? ' · ' + esc(t('run.undone')) : ''}${r.repos.some(x => x.pushed) ? ' · ' + esc(t('run.pushed')) : ''}</div><ul class="files">${commits.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : '')
     + (files.length ? `<div class="group-h">${esc(tn('det.files', files.length))}</div><ul class="files">${files.slice(0, 80).map(x => `<li data-reveal="${esc(x.dir + '/' + x.f)}" title="${esc(x.dir)}">${esc(x.f)}</li>`).join('')}</ul>` : '');
   p.log = `<div class="group-h">${esc(t('det.log'))}</div><div class="log" id="runLog"><div class="info ph">…</div></div>`;
-  p.chat = r.sessionId || st !== 'running' ? `<div class="group-h">${esc(t('det.chat'))}</div><div class="chat"><textarea id="chatIn" data-chat-in="${esc(r.id)}" placeholder="${esc(t('det.chatPh'))}">${esc(chatDraft[r.id] || '')}</textarea>
+  p.chat = r.sessionId || st !== 'running' ? `<div class="group-h">${esc(t('det.chat'))}</div><div class="chat">${modeChips(r.id)}<textarea id="chatIn" data-chat-in="${esc(r.id)}" placeholder="${esc(t('det.chatPh'))}">${esc(chatDraft[r.id] || '')}</textarea>
     <div class="d-actions" style="margin:0"><button class="btn-sm primary" data-chat="${esc(r.id)}"${st === 'running' ? ' disabled' : ''}>${esc(t('det.send'))}</button><span class="meta">${esc(t('det.chatHint'))}</span></div></div>` : '';
   return p;
 }
@@ -546,14 +550,138 @@ function viewFull(r) {
    Enter sends (Shift+Enter: new line), the round button stops the run while Claude is working. */
 function composer(r, st) {
   const running = st === 'running';
-  return `<div class="composer-wrap"><div class="composer${running ? ' busy' : ''}">
+  return `<div class="composer-wrap"><div class="composer${running ? ' busy' : ''}">${modeChips(r.id)}
       <textarea id="chatIn" rows="1" data-chat-in="${esc(r.id)}" data-grow placeholder="${esc(t(running ? 'full.chatBusy' : 'full.chatPh'))}">${esc(chatDraft[r.id] || '')}</textarea>
-      <div class="composer-bar"><span class="composer-tag" title="${esc(t('det.chatHint'))}">${esc(t('lv.' + r.spec.level))}${r.spec.auto ? ' · ' + esc(t('ed.autoShort')) : ''}${r.spec.model ? ' · ' + esc(t('model.' + r.spec.model)) : ''}</span><span class="flex"></span>
+      <div class="composer-bar"><span class="composer-tag" title="${esc(t('det.chatHint'))}">${esc(t('lv.' + r.spec.level))}${r.spec.auto ? ' · ' + esc(t('ed.autoShort')) : ''}${r.spec.model ? ' · ' + esc(t('model.' + r.spec.model)) : ''}</span><span class="flex"></span><button class="composer-slash" data-slash-open="${esc(r.id)}" title="${esc(t('sl.menu'))} (/)">/</button>
         ${running ? `<button class="composer-btn stop" data-stop="${esc(r.id)}" title="${esc(t('run.stop'))}"><i></i></button>`
           : `<button class="composer-btn" data-chat="${esc(r.id)}" title="${esc(t('det.send'))} (Enter)"${chatDraft[r.id] && chatDraft[r.id].trim() ? '' : ' disabled'}>&uarr;</button>`}</div></div>
     <div class="composer-foot">${esc(t('full.chatFoot'))}</div></div>`;
 }
 const growChat = el => { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, Math.round(innerHeight * 0.4)) + 'px'; };
+
+/* ================= Slash commands ================= */
+/* Like in the Claude desktop app: "/" in the chat box opens a list of commands. Agent Studio does the built-in ones
+   itself; the person's own commands and skills (~/.claude/commands, ~/.claude/skills and the same in the run's
+   folders) are expanded to their text (slash_expand) — runs start without Claude Code's own setup. */
+const BUILTIN = [
+  {name: 'clear', alias: ['new', 'reset'], hint: 'sl.hintText'},
+  {name: 'model', hint: 'sl.hintModel'},
+  {name: 'plan', hint: 'sl.hintText'},
+  {name: 'compact', hint: 'sl.hintCompact'},
+  {name: 'cost', alias: ['usage']},
+  {name: 'diff'},
+  {name: 'stop'},
+  {name: 'full'},
+  {name: 'help'},
+];
+const MODELS = ['default', 'opus', 'sonnet', 'haiku'];
+const chatMode = {};     // run id → {fresh, model, plan}: what the next message changes (/clear, /model, /plan)
+const slashCache = {};   // folders → {at, list}
+async function ownCommands(r) {
+  const key = r.spec.dirs.join('\n'), c = slashCache[key];
+  if (c && Date.now() - c.at < 15000) return c.list;
+  const list = invoke ? await invoke('slash_list', {dirs: r.spec.dirs}).catch(() => []) : [];
+  slashCache[key] = {at: Date.now(), list};
+  return list;
+}
+const builtinOf = n => BUILTIN.find(b => b.name === n || (b.alias || []).includes(n));
+const modelName = m => m ? t('model.' + m) : t('model.default');
+function modeChips(id) {
+  const m = chatMode[id]; if (!m) return '';
+  const chip = (k, text) => `<span class="mode-chip">${esc(text)}<button data-mode-off="${esc(id)}|${k}" title="${esc(t('sl.off'))}">&#10005;</button></span>`;
+  const out = [m.fresh && chip('fresh', t('sl.chipFresh')), m.model !== undefined && chip('model', modelName(m.model)), m.plan && chip('plan', t('sl.chipPlan'))].filter(Boolean);
+  return out.length ? `<div class="mode-chips">${out.join('')}</div>` : '';
+}
+/* The entries the menu shows for what is typed: commands while the first word is typed, models after "/model ". */
+async function slashEntries(r, text) {
+  const mm = /^\/model\s+(\S*)$/i.exec(text);
+  if (mm) return MODELS.filter(m => m.startsWith(mm[1].toLowerCase())).map(m => ({name: 'model ' + m, desc: modelName(m), fill: '/model ' + m, run: true}));
+  const m = /^\/(\S*)$/.exec(text); if (!m) return [];
+  const q = m[1].toLowerCase();
+  const all = [...BUILTIN.map(b => ({name: b.name, desc: t('sl.' + b.name), hint: b.hint ? t(b.hint) : '', tag: '', alias: b.alias || []})),
+    ...(await ownCommands(r)).map(c => ({name: c.name, desc: c.description, hint: c.hint, tag: t(c.kind === 'skill' ? 'sl.skill' : 'sl.own') + (c.source === 'project' ? ' · ' + t('sl.project') : '')}))];
+  const hit = e => [e.name, ...(e.alias || [])].some(n => n.toLowerCase().startsWith(q));
+  return [...all.filter(hit), ...all.filter(e => !hit(e) && (e.name.toLowerCase().includes(q) || String(e.desc).toLowerCase().includes(q)))].slice(0, 40)
+    .map(e => ({...e, fill: '/' + e.name + ' '}));
+}
+let slash = null;        // {id, items, at}: the open menu
+async function slashMenu(el) {
+  const id = el.dataset.chatIn, r = runOf(id);
+  const box = el.closest('.composer, .chat');
+  const close = () => { slash = null; $$('.slash-menu').forEach(x => x.remove()); };
+  if (!r || !box) return close();
+  const text = el.value.slice(0, el.selectionEnd);
+  const items = text === el.value ? await slashEntries(r, text) : [];
+  if (el.value.slice(0, el.selectionEnd) !== text || document.activeElement !== el) return;   // typed on meanwhile
+  if (!items.length) return close();
+  const at = slash && slash.id === id ? Math.min(slash.at, items.length - 1) : 0;
+  slash = {id, items, at};
+  let m = box.querySelector('.slash-menu');
+  if (!m) { m = document.createElement('div'); m.className = 'slash-menu'; m.setAttribute('role', 'listbox'); box.prepend(m); }
+  m.innerHTML = items.map((e, i) => `<div class="sl-item${i === at ? ' on' : ''}" data-sl="${i}" role="option"><b>/${esc(e.name)}</b>${e.hint ? `<span class="sl-hint">${esc(e.hint)}</span>` : ''}<span class="sl-desc">${esc(e.desc)}</span>${e.tag ? `<span class="sl-tag">${esc(e.tag)}</span>` : ''}</div>`).join('');
+  const on = m.querySelector('.on'); if (on) on.scrollIntoView({block: 'nearest'});
+}
+function slashPick(el, i) {
+  const e = slash && slash.items[i]; if (!e) return;
+  el.value = e.fill; chatChanged(el);
+  el.setSelectionRange(el.value.length, el.value.length);
+  if (e.run) { slashClose(); sendChat(el.dataset.chatIn); } else slashMenu(el);
+}
+const slashClose = () => { slash = null; $$('.slash-menu').forEach(x => x.remove()); };
+/* The conversation's cost so far: this run and the ones it continues. */
+function chainCost(r) { let n = 0, x = r; for (let i = 0; i < 200 && x; i++) { n += x.cost || 0; x = x.spec.continues && runOf(x.spec.continues); } return n; }
+function slashHelp(r) {
+  ownCommands(r).then(own => {
+    const row = (n, h, d, tag) => `<tr><td><b>/${esc(n)}</b>${h ? ` <span class="sl-hint">${esc(h)}</span>` : ''}</td><td>${esc(d)}${tag ? ` <span class="sl-tag">${esc(tag)}</span>` : ''}</td></tr>`;
+    modal(t('sl.helpTitle'), `<p class="meta">${esc(t('sl.helpIntro'))}</p><table class="sl-table">${BUILTIN.map(b => row(b.name + (b.alias ? ', /' + b.alias.join(', /') : ''), b.hint ? t(b.hint) : '', t('sl.' + b.name))).join('')}
+      ${own.map(c => row(c.name, c.hint, c.description, t(c.kind === 'skill' ? 'sl.skill' : 'sl.own') + (c.source === 'project' ? ' · ' + t('sl.project') : ''))).join('')}</table>
+      ${own.length ? '' : `<p class="meta">${esc(t('sl.noOwn'))}</p>`}`);
+  });
+}
+/* Sends what is in the chat box of run `id`: a slash command, or a message (with what /clear, /model, /plan set). */
+async function sendChat(id) {
+  const el = $(`[data-chat-in="${CSS.escape(id)}"]`), r = runOf(id);
+  if (!el || !r) return;
+  const text = el.value.trim();
+  if (!text) { el.focus(); return; }
+  const done = () => { el.value = ''; chatChanged(el); delete chatDraft[id]; slashClose(); };
+  const mode = chatMode[id] || {};
+  let prompt = text, opts = {fresh: !!mode.fresh, model: mode.model === undefined ? null : mode.model, plan: !!mode.plan};
+  const m = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text);
+  if (m && !text.startsWith('//')) {
+    const name = m[1].toLowerCase(), args = (m[2] || '').trim(), b = builtinOf(name);
+    const set = (k, v, msg) => { chatMode[id] = {...mode, [k]: v}; done(); toast(msg); renderAll(); };
+    if (b) switch (b.name) {
+      case 'clear': if (!args) return set('fresh', true, t('sl.freshSet')); prompt = args; opts.fresh = true; break;
+      case 'plan': if (!args) return set('plan', true, t('sl.planSet')); prompt = args; opts.plan = true; break;
+      case 'model': {
+        const want = args.toLowerCase().replace(/^standard$/, 'default');
+        if (!args) { el.value = '/model '; chatChanged(el); return slashMenu(el); }
+        if (!MODELS.includes(want)) return toast(t('sl.badModel', {m: args, list: MODELS.join(', ')}));
+        return set('model', want === 'default' ? '' : want, t('sl.modelSet', {m: modelName(want === 'default' ? '' : want)}));
+      }
+      case 'compact':
+        if (!r.sessionId) return toast(t('sl.noSession'));
+        prompt = '/compact' + (args ? ' ' + args : ''); opts = {fresh: false, model: null, plan: false}; break;
+      case 'cost': done(); return toast(t('sl.costIs', {c: '$' + chainCost(r).toFixed(2)}));
+      case 'diff': done(); return r.repos.length ? showDiff(id) : toast(t('run.noDiff'));
+      case 'stop': done(); return isRunning(id) ? stopRun(id) : toast(t('run.noneRunning'));
+      case 'full': done(); return full ? closeFull() : openFull(id);
+      case 'help': done(); return slashHelp(r);
+    } else {
+      const c = (await ownCommands(r)).find(x => x.name.toLowerCase() === name);
+      if (!c) return toast(t('sl.unknown', {name: m[1]}));
+      try { prompt = await invoke('slash_expand', {path: c.path, kind: c.kind, name: c.name, args, lang}); } catch (err) { return toast(String(err)); }
+    }
+  }
+  if (isRunning(id)) return toast(t('sl.busy'));
+  if (text.startsWith('//')) prompt = text.slice(1);
+  try {
+    const nid = await invoke('run_message', {id, text: prompt, opts});
+    done(); delete chatMode[id];
+    await refresh(); showRun(nid);
+  } catch (err) { toast(String(err)); }
+}
 const logLine = l => `<div class="${esc(l.kind)}"><time>${esc(new Date(l.t).toLocaleTimeString(locale()))}</time>${esc(l.text)}</div>`;
 function scrollLog(force) { const el = $('#runLog'); if (el && (force || el.scrollHeight - el.scrollTop - el.clientHeight < 60)) el.scrollTop = el.scrollHeight; }
 function dirsField(dirs, key) {
@@ -658,12 +786,10 @@ async function common(b, e) {
   const d = b.dataset;
   if (d.openRun) { e && e.preventDefault(); showRun(d.openRun); return true; }
   if (d.full) { openFull(d.full); return true; }
-  if (d.chat) {
-    const text = $('#chatIn').value.trim();
-    if (!text) { $('#chatIn').focus(); return true; }
-    try { const id = await invoke('run_message', {id: d.chat, text}); delete chatDraft[d.chat]; await refresh(); showRun(id); } catch (err) { toast(String(err)); }
-    return true;
-  }
+  if (d.chat) { sendChat(d.chat); return true; }
+  if (d.slashOpen) { const el = $(`[data-chat-in="${CSS.escape(d.slashOpen)}"]`); if (el && el.value.trim() && !el.value.startsWith('/')) slashHelp(runOf(d.slashOpen));   // keeps what is typed
+    else if (el) { if (!el.value) { el.value = '/'; chatChanged(el); } el.focus(); el.setSelectionRange(el.value.length, el.value.length); slashMenu(el); } return true; }
+  if (d.modeOff) { const [id, k] = d.modeOff.split('|'); if (chatMode[id]) { delete chatMode[id][k]; if (!Object.keys(chatMode[id]).length) delete chatMode[id]; } renderAll(); return true; }
   if (d.stop) { stopRun(d.stop); return true; }
   if (d.start) { const r = routineOf(d.start); if (r) startRoutine(r, true); return true; }
   if (d.again) { const r = runOf(d.again), f = firstOf(r); startRun({...f.spec, resume: null, continues: null, allowOnce: []}); return true; }
@@ -733,20 +859,45 @@ $('#view').addEventListener('dblclick', e => {
   if (b && !e.target.closest('button,input,select,textarea,a')) openFull(b.dataset.run);
 });
 // The message to Claude being typed stays when the run's details are redrawn (panel and full view).
+function chatChanged(el) {
+  const id = el.dataset.chatIn;
+  chatDraft[id] = el.value;
+  if (el.dataset.grow !== undefined) { growChat(el); const b = $(`[data-chat="${CSS.escape(id)}"]`); if (b) b.disabled = !el.value.trim(); }
+}
 document.addEventListener('input', e => {
-  const id = e.target.dataset && e.target.dataset.chatIn; if (!id) return;
-  chatDraft[id] = e.target.value;
-  if (e.target.dataset.grow !== undefined) { growChat(e.target); const b = $(`[data-chat="${CSS.escape(id)}"]`); if (b) b.disabled = !e.target.value.trim(); }
+  if (!(e.target.dataset && e.target.dataset.chatIn)) return;
+  chatChanged(e.target);
+  if (e.target.value.startsWith('/')) slashMenu(e.target); else if (slash) slashClose();
 });
-// Enter sends in the chat box of the full view (Shift+Enter: new line), Ctrl+Enter in the panel.
+document.addEventListener('focusout', e => { if (slash && e.target.dataset && e.target.dataset.chatIn) setTimeout(() => { const a = document.activeElement; if (!a || !a.dataset.chatIn) slashClose(); }, 0); });
+// A click on an entry of the menu (mousedown: the chat box keeps the focus).
+document.addEventListener('mousedown', e => {
+  const it = e.target.closest('.sl-item'); if (!it) return;
+  e.preventDefault();
+  const el = it.closest('.composer, .chat').querySelector('[data-chat-in]');
+  if (el) slashPick(el, +it.dataset.sl);
+});
+// Enter sends in the chat box of the full view (Shift+Enter: new line), Ctrl+Enter in the panel. While the menu of
+// slash commands is open: ↑/↓ choose, Tab or Enter take the command, Esc closes the menu.
 document.addEventListener('keydown', e => {
   const id = e.target.dataset && e.target.dataset.chatIn;
-  if (!id || e.key !== 'Enter' || e.isComposing) return;
+  if (!id || e.isComposing) return;
+  if (slash && slash.id === id && $('.slash-menu')) {
+    const n = slash.items.length, move = d => { e.preventDefault(); e.stopPropagation(); slash.at = (slash.at + d + n) % n; slashMenu(e.target); };
+    if (e.key === 'ArrowDown') return move(1);
+    if (e.key === 'ArrowUp') return move(-1);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); return slashClose(); }
+    const it = slash.items[slash.at], typed = e.target.value.trim();
+    if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+      e.preventDefault(); e.stopPropagation();
+      return e.key === 'Enter' && (!it || it.fill.trim() === typed) ? sendChat(id) : slashPick(e.target, slash.at);
+    }
+  }
+  if (e.key !== 'Enter') return;
   const big = e.target.dataset.grow !== undefined;
   if (big ? e.shiftKey : !(e.ctrlKey || e.metaKey)) return;
   e.preventDefault(); e.stopPropagation();
-  const b = $(`[data-chat="${CSS.escape(id)}"]`);
-  if (b && !b.disabled) b.click();
+  sendChat(id);
 }, true);
 $('#view').addEventListener('keydown', e => {
   const p = e.target.dataset && e.target.dataset.addText;

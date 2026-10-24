@@ -40,6 +40,10 @@ API key and no password; routines, logs and history stay on your computer.
   answer buttons when it needs you and a chat box like in the Claude desktop app pinned to the bottom (Enter sends,
   Shift+Enter for a new line, the round button stops a running task); Esc or "Back" returns to where you were.
 - **Talk to Claude:** go on with any run — a question, a correction, the next step — in the same conversation.
+- **Slash commands** like in the Claude desktop app: `/` in the chat box lists them — `/clear`, `/model`, `/plan`,
+  `/compact`, `/cost`, `/diff`, `/stop`, `/full`, `/help` — plus **your own commands and skills** from
+  `~/.claude/commands`, `~/.claude/skills` and `.claude/` in the run's folders (sent as their text, since runs don't
+  load Claude Code's own setup).
 - **Rules** for every run ("commit messages in German", "keep the changelog") and per routine, a **daily limit** of
   minutes, the time Claude worked today in the status bar.
 - Sign-in from the app (`claude auth login` opens your browser), Claude Code found by itself (installer, npm, Homebrew,
@@ -60,7 +64,8 @@ answer or an approval continues the session (`--resume`), an approval with exact
 ```
 ui/                 index.html, app.js; native.js, autohide.js, shortcuts.js, shared.js (the same in every Studio app)
 src-tauri/src/      main.rs — commands; runner.rs — rights, arguments, reading Claude's output, git (changes, diff, undo);
-                    runs.rs — runs, logs, the box, notifications; todo.rs — Markdown checkboxes; shared.rs — shared settings
+                    runs.rs — runs, logs, the box, notifications; todo.rs — Markdown checkboxes; slash.rs — own slash commands and skills;
+                    shared.rs — shared settings
 src-tauri/i18n/     en.json, de.json — all texts
 ```
 

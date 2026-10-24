@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 — 2026-10-24
+- Slash commands like in the Claude desktop app: type `/` in a run's chat box (full view and panel) or press the `/`
+  button — a list of commands opens; ↑/↓ choose, Tab or Enter take one, Esc closes it.
+  - `/clear` (`/new`, `/reset`) starts a new conversation with the same rights and folders, `/model opus|sonnet|haiku|default`
+    changes the model from the next message on, `/plan` only plans the next step, `/compact` summarises the
+    conversation, `/cost` shows what it has cost so far, `/diff`, `/stop`, `/full` and `/help`.
+  - What `/clear`, `/model` and `/plan` set shows as chips above the message (✕ removes it); `/clear text` and
+    `/plan text` send right away.
+  - Your own commands and skills: `~/.claude/commands/*.md` (subfolders as `folder:name`), `~/.claude/skills/*/SKILL.md`
+    and the same in `.claude/` of the run's folders (a project's one wins). A command is sent as its text with
+    `$ARGUMENTS` and `$1`…`$9` filled in, a skill as its instructions.
+  - `//` at the start sends a text that begins with `/`.
+
 ## 0.5.0 — 2026-10-24
 - A chat box like in the Claude desktop app in the full view: pinned to the bottom of the window, rounded, it grows with
   the text (up to 40 % of the window) and keeps its height and cursor when the run is redrawn. Enter sends, Shift+Enter
