@@ -11,7 +11,7 @@ Unlike the other Studio apps it needs the internet and a Claude account: the wor
 [Claude Code](https://claude.com/claude-code) (the `claude` program) with **your own sign-in**. Agent Studio stores no
 API key and no password; routines, logs and history stay on your computer.
 
-## Features (0.1.0)
+## Features (0.2.0)
 - **Needs you:** one box for everything Claude needs from you — questions (with answer buttons or your own text),
   approvals (exactly what was refused, e.g. `git push origin main`; approve or refuse, with a note), "done" notes with a
   summary, and problems. A number on the app icon and in the window title, and a notification of the system. Your answer
@@ -19,12 +19,15 @@ API key and no password; routines, logs and history stay on your computer.
 - **Linked to-do lists:** any Markdown file with checkboxes (`- [ ] …`), e.g. your `TODO.md`, grouped by its headings.
   "Do it" per item or "Work through" the whole list; each item shows its state (running · needs you · done · problem).
   The file stays yours: Claude only ticks an item when you allowed it for that file. Changes are noticed at once.
+  Link as many lists as you like (several at once), each with **its own folders and rights** or the ones for all lists.
 - **Routines:** a standing task in your words, the folders, the rights and when — only by button, every day, Mon–Fri,
   every week, when Agent Studio starts, or when the to-do list changes. A missed time is caught up when the app opens.
   Templates: work through the to-do list, bug hunt (report only), check builds, weekly review, study sheet from notes,
   check dependencies.
 - **Rights per run:** read · change files · commit · push & publish, the folders it may work in, allowed commands,
-  internet yes/no, never delete, a time limit, the model, and **plan only** (say what would be done, change nothing).
+  internet yes/no, never delete, a time limit, the model, **plan only** (say what would be done, change nothing) and
+  **auto mode** (Claude Code's own mode: no question for each step, it checks every step itself and still refuses risky
+  ones; the level stays the limit).
   Anything beyond is refused at once and comes to "Needs you". Never allowed: force-push, `git reset --hard`,
   `git clean`, `sudo`. Only Agent Studio's rights count — other Claude Code settings are not used in runs.
 - **See what Claude does:** a live log of every step (files, commands, what was refused), the **emergency stop** for
@@ -42,7 +45,7 @@ Setup: `config.json`, runs and the box: `state.json`, one log per run: `runs/<id
 
 ## How a run works
 Agent Studio starts `claude -p --output-format stream-json` in the first folder, with
-`--permission-mode dontAsk` (`plan` for "plan only"), `--setting-sources ""` and its own `--settings` (the allowed and
+`--permission-mode dontAsk` (`plan` for "plan only", `auto` for auto mode — then everything above the level is refused outright), `--setting-sources ""` and its own `--settings` (the allowed and
 refused tools of the run), and tells Claude how to ask: a ```` ```agent-studio ```` block at the end of its answer. The
 prompt goes to its input. Refused tool calls (`permission_denials`) and that block become items of "Needs you"; an
 answer or an approval continues the session (`--resume`), an approval with exactly that one command allowed.

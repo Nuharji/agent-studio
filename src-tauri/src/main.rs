@@ -213,6 +213,14 @@ async fn pick_file(app: AppHandle, filter_name: String, exts: Vec<String>) -> Op
     d.blocking_pick_file().and_then(|f| f.into_path().ok()).map(|p| p.to_string_lossy().into_owned())
 }
 
+/// Picks several files (to-do lists).
+#[tauri::command]
+async fn pick_files(app: AppHandle, filter_name: String, exts: Vec<String>) -> Vec<String> {
+    let exts: Vec<&str> = exts.iter().map(String::as_str).collect();
+    shared::file_dialog(&app).add_filter(&filter_name, &exts).blocking_pick_files().unwrap_or_default()
+        .into_iter().filter_map(|f| f.into_path().ok()).map(|p| p.to_string_lossy().into_owned()).collect()
+}
+
 /// Shows a file or folder in Finder / Explorer.
 #[tauri::command]
 fn reveal(app: AppHandle, path: String) -> Result<(), String> {
@@ -333,6 +341,7 @@ fn main() {
             todo_tick,
             pick_folder,
             pick_file,
+            pick_files,
             reveal,
             open_url,
             set_badge,

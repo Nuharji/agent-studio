@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 — 2026-10-24
+- Auto mode (per routine, per list, per task): Claude works on its own within the rights — any command, no question for
+  each step. Claude Code checks every step itself and still refuses risky ones (they come to "Needs you"); the rights
+  stay the limit (e.g. "change files" never commits or pushes in auto mode), never force-push.
+- Several to-do lists at once: pick more than one file when linking.
+- Own folders and rights per list ("Folders & rights" on each list), e.g. one list per project; lists without them use
+  the settings for all lists.
+
 ## 0.1.1 — 2026-10-24
 - New app icon: the tile now fades from dark at the top left to lighter at the bottom right, like the other Studio apps.
 

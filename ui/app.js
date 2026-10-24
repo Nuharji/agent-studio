@@ -92,7 +92,7 @@ const firstOf = r => { let x = r; for (let i = 0; i < 50 && x && x.spec.continue
 /* ================= Runs ================= */
 function specFrom(o, extra = {}) {
   return {title: o.name || o.title || '', prompt: o.prompt || '', dirs: (o.dirs || []).filter(Boolean), level: LEVELS.includes(o.level) ? o.level : 'read',
-    commands: list(o.commands), web: !!o.web, noDelete: o.noDelete !== false, planOnly: !!o.planOnly, maxMinutes: Math.max(0, +o.maxMinutes || 0),
+    commands: list(o.commands), web: !!o.web, noDelete: o.noDelete !== false, planOnly: !!o.planOnly, auto: !!o.auto, maxMinutes: Math.max(0, +o.maxMinutes || 0),
     model: o.model || cfg.model || '', rules: [...lines(cfg.rules), ...lines(o.rules)], lang, routineId: o.id || null, ...extra};
 }
 async function startRun(spec, {show = true, manual = true} = {}) {
@@ -156,30 +156,38 @@ const todoKey = (path, text) => path + '\u0000' + text;
 function runForItem(path, text) {
   return data.runs.find(r => r.spec.todo && r.spec.todo.path === path && r.spec.todo.text === text);
 }
-function todoProfileOk() {
-  if ((cfg.todo.dirs || []).length) return true;
-  toast(t('todo.needDirs')); sel = {type: 'todo'}; setView('todos'); return false;
+/* How Claude works on a list: its own folders and rights, or the ones for all lists. */
+const listOf = path => cfg.todoFiles.find(f => f.path === path);
+const profileOf = path => { const f = listOf(path); return f && f.own ? f : cfg.todo; };
+function todoProfileOk(path) {
+  if ((profileOf(path).dirs || []).length) return true;
+  toast(t('todo.needDirs'));
+  const f = listOf(path);
+  sel = f && f.own ? {type: 'list', id: path} : {type: 'todo'}; setView('todos'); return false;
 }
 async function doItem(path, it) {
-  if (!todoProfileOk()) return;
-  const where = it.section ? t('todo.inSection', {s: it.section}) : '';
-  const prompt = t('todo.prompt', {path, where, text: it.text}) + (cfg.todo.prompt ? '\n\n' + cfg.todo.prompt : '');
-  await startRun(specFrom({...cfg.todo, title: it.text}, {prompt, todo: {path, line: it.line, text: it.text}}));
+  if (!todoProfileOk(path)) return;
+  const p = profileOf(path), where = it.section ? t('todo.inSection', {s: it.section}) : '';
+  const prompt = t('todo.prompt', {path, where, text: it.text}) + (p.prompt ? '\n\n' + p.prompt : '');
+  await startRun(specFrom({...p, id: null, name: '', title: it.text}, {prompt, todo: {path, line: it.line, text: it.text}}));
 }
 async function doList(path) {
-  if (!todoProfileOk()) return;
-  const prompt = t('todo.promptAll', {path}) + (cfg.todo.prompt ? '\n\n' + cfg.todo.prompt : '');
-  await startRun(specFrom({...cfg.todo, title: t('todo.allTitle', {name: baseName(path)})}, {prompt}));
+  if (!todoProfileOk(path)) return;
+  const p = profileOf(path);
+  const prompt = t('todo.promptAll', {path}) + (p.prompt ? '\n\n' + p.prompt : '');
+  await startRun(specFrom({...p, id: null, name: '', title: t('todo.allTitle', {name: baseName(path)})}, {prompt}));
 }
 async function linkTodo() {
   if (!invoke) return toast(t('ui.appOnly'));
-  const path = await invoke('pick_file', {filterName: 'Markdown', exts: ['md', 'markdown', 'txt']});
-  if (!path) return;
-  if (cfg.todoFiles.some(f => f.path === path)) return toast(t('todo.already'));
-  cfg.todoFiles.push({path, tick: false}); saveCfg();
-  await loadTodo(path);
+  const paths = await invoke('pick_files', {filterName: 'Markdown', exts: ['md', 'markdown', 'txt']});
+  const fresh = paths.filter(p => !cfg.todoFiles.some(f => f.path === p));
+  if (!paths.length) return;
+  if (!fresh.length) return toast(t('todo.already'));
+  for (const path of fresh) { cfg.todoFiles.push({path, tick: false}); await loadTodo(path); }
+  saveCfg();
   setView('todos');
-  toast(tn('todo.linked', todos[path].items.filter(i => !i.done).length));
+  const open = fresh.reduce((n, p) => n + todos[p].items.filter(i => !i.done).length, 0);
+  toast(fresh.length > 1 ? t('todo.linkedMany', {k: fresh.length, n: open}) : tn('todo.linked', open));
 }
 /* Changes of the lists: re-read them, and start routines that wait for a change (after a minute of quiet). */
 const seen = {};         // path → stamp seen
@@ -355,15 +363,17 @@ function viewTodos() {
   let h = `<div class="view-title"><h1>${esc(t('v.todos'))}</h1><span class="sub">${esc(t('todo.sub'))}</span><span class="flex"></span>
     <button class="btn-sm" data-act="linkTodo">${esc(t('a.linkTodo'))}</button></div>`;
   h += `<div class="pcard${sel && sel.type === 'todo' ? ' sel' : ''}" data-todo-profile><div class="it-head"><b>${esc(t('todo.how'))}</b><span class="flex"></span><button class="btn-sm" data-todo-edit>${esc(t('todo.edit'))}</button></div>
-    <div class="meta">${(p.dirs || []).length ? esc(t('todo.howText', {dirs: p.dirs.map(baseName).join(', '), lv: t('lv.' + p.level)})) : esc(t('todo.howNone'))}</div></div>`;
+    <div class="meta">${(p.dirs || []).length ? esc(t('todo.howText', {dirs: p.dirs.map(baseName).join(', '), lv: t('lv.' + p.level) + (p.auto ? ' · ' + t('ed.autoShort') : '')})) : esc(t('todo.howNone'))}</div></div>`;
   if (!cfg.todoFiles.length) return h + emptyBig(t('todo.emptyTitle'), t('todo.empty'), `<button class="btn-sm primary" data-act="linkTodo">${esc(t('a.linkTodo'))}</button>`);
   for (const f of cfg.todoFiles) {
     const d = todos[f.path] || {items: []};
-    const open = d.items.filter(i => !i.done).length;
-    h += `<div class="pcard"><h2><span title="${esc(f.path)}">${esc(baseName(f.path))}</span><span class="badge">${esc(tn('todo.openN', open))}</span><span class="flex"></span>
+    const open = d.items.filter(i => !i.done).length, pr = profileOf(f.path);
+    h += `<div class="pcard${sel && sel.type === 'list' && sel.id === f.path ? ' sel' : ''}"><h2><span title="${esc(f.path)}">${esc(baseName(f.path))}</span><span class="badge">${esc(tn('todo.openN', open))}</span><span class="flex"></span>
       <label class="switch" style="margin:0;text-transform:none;letter-spacing:0;font-weight:400"><input type="checkbox" data-tick="${esc(f.path)}"${f.tick ? ' checked' : ''}><span></span>${esc(t('todo.tick'))}</label>
       <button class="btn-sm" data-doall="${esc(f.path)}"${open ? '' : ' disabled'}>${esc(t('todo.doAll'))}</button>
-      <button class="btn-sm" data-reveal="${esc(f.path)}">${esc(t('ui.show'))}</button><button class="btn-sm" data-unlink="${esc(f.path)}">${esc(t('todo.unlink'))}</button></h2>`;
+      <button class="btn-sm" data-list-edit="${esc(f.path)}">${esc(t('todo.listEdit'))}</button>
+      <button class="btn-sm" data-reveal="${esc(f.path)}">${esc(t('ui.show'))}</button><button class="btn-sm" data-unlink="${esc(f.path)}">${esc(t('todo.unlink'))}</button></h2>
+      <div class="meta" style="margin:-2px 0 6px">${esc(f.own ? t('todo.ownWhere') : t('todo.allWhere'))}: ${esc((pr.dirs || []).map(baseName).join(', ') || t('rt.noDirsShort'))} · ${esc(t('lv.' + pr.level))}${pr.auto ? ' · ' + esc(t('ed.autoShort')) : ''}</div>`;
     if (d.error) h += `<div class="empty-s" style="color:var(--danger)">${esc(d.error)}</div>`;
     else if (!d.items.length) h += `<div class="empty-s">${esc(t('todo.noItems'))}</div>`;
     let sect = null;
@@ -395,7 +405,7 @@ function viewRoutines() {
     const last = data.runs.find(x => x.spec.routineId === r.id), next = r.enabled ? nextSlot(r) : null, run = routineRunning(r.id);
     return `<div class="pcard${sel && sel.type === 'routine' && sel.id === r.id ? ' sel' : ''}" data-routine="${esc(r.id)}">
       <div class="it-head"><label class="switch" style="margin:0" title="${esc(t('rt.enabled'))}"><input type="checkbox" data-enable="${esc(r.id)}"${r.enabled ? ' checked' : ''}><span></span></label>
-        <b>${esc(r.name || t('rt.newName'))}</b>${levelBadge(r.level)}${r.planOnly ? `<span class="badge">${esc(t('rt.planOnly'))}</span>` : ''}<span class="flex"></span>
+        <b>${esc(r.name || t('rt.newName'))}</b>${levelBadge(r.level)}${r.planOnly ? `<span class="badge">${esc(t('rt.planOnly'))}</span>` : r.auto ? `<span class="badge blue">${esc(t('ed.autoShort'))}</span>` : ''}<span class="flex"></span>
         ${run ? `<button class="btn-sm" data-stop-routine="${esc(r.id)}">${esc(t('run.stop'))}</button>` : `<button class="btn-sm primary" data-start="${esc(r.id)}">${esc(t('rt.start'))}</button>`}</div>
       <div class="meta">${esc(scheduleText(r))}${next ? ' · ' + esc(t('rt.next', {w: fmtWhen(next)})) : ''} · ${esc((r.dirs || []).map(baseName).join(', ') || t('rt.noDirsShort'))}</div>
       ${last ? `<div class="meta" style="margin-top:4px">${statusBadge(stOf(last))} ${esc(t('rt.last', {w: fmtWhen(last.started)}))}</div>` : ''}</div>`;
@@ -431,6 +441,7 @@ function renderDetails() {
   if (sel && sel.type === 'run' && runOf(sel.id)) return runDetails(box, runOf(sel.id));
   if (sel && sel.type === 'routine' && routineOf(sel.id)) return routineEditor(box, routineOf(sel.id));
   if (sel && sel.type === 'todo') return profileEditor(box);
+  if (sel && sel.type === 'list' && listOf(sel.id)) return listEditor(box, listOf(sel.id));
   box.innerHTML = `<div class="empty-s">${esc(t('det.none'))}</div>
     <div class="group-h">${esc(t('det.levels'))}</div>${LEVELS.map(l => `<div class="kv"><span>${esc(t('lv.' + l))}</span></div><div class="meta" style="margin:-2px 0 6px">${esc(t('lv.' + l + '.hint'))}</div>`).join('')}`;
 }
@@ -442,7 +453,7 @@ function runDetails(box, r) {
   let h = `<div class="it-head"><b>${esc(r.spec.title)}</b>${statusBadge(st)}</div>
     <div class="kv"><span>${esc(t('det.started'))}</span><b>${esc(fmtWhen(r.started))}</b></div>
     <div class="kv"><span>${esc(t('det.duration'))}</span><b>${esc(fmtDur((r.ended || Date.now()) - r.started))}</b></div>
-    <div class="kv"><span>${esc(t('det.rights'))}</span><b>${esc(t('lv.' + r.spec.level))}${r.spec.planOnly ? ' · ' + esc(t('rt.planOnly')) : ''}</b></div>
+    <div class="kv"><span>${esc(t('det.rights'))}</span><b>${esc(t('lv.' + r.spec.level))}${r.spec.planOnly ? ' · ' + esc(t('rt.planOnly')) : r.spec.auto ? ' · ' + esc(t('ed.autoShort')) : ''}</b></div>
     <div class="kv"><span>${esc(t('det.dirs'))}</span><b title="${esc(r.spec.dirs.join('\n'))}">${esc(r.spec.dirs.map(baseName).join(', '))}</b></div>
     ${prev ? `<div class="kv"><span>${esc(t('det.continues'))}</span><b><a href="#" data-open-run="${esc(prev.id)}">${esc(fmtWhen(prev.started))}</a></b></div>` : ''}
     ${next ? `<div class="kv"><span>${esc(t('det.continued'))}</span><b><a href="#" data-open-run="${esc(next.id)}">${esc(fmtWhen(next.started))}</a></b></div>` : ''}
@@ -472,7 +483,9 @@ function rightsFields(o, key) {
   return `<div class="ed-field"><label>${esc(t('ed.dirs'))}</label>${dirsField(o.dirs || [], key)}<div class="hint">${esc(t('ed.dirsHint'))}</div></div>
     <div class="ed-field"><label>${esc(t('ed.level'))}</label><div class="lvl">${LEVELS.map((l, i) => `<button class="${o.level === l ? 'on l' + i : ''}" data-level="${key}|${l}">${esc(t('lv.' + l + '.short'))}</button>`).join('')}</div>
       <div class="hint">${esc(t('lv.' + o.level + '.hint'))}</div></div>
-    ${LEVELS.indexOf(o.level) >= 1 ? `<div class="ed-field"><label>${esc(t('ed.commands'))}</label><input class="field-in" data-f="${key}|commands" value="${esc(o.commands || '')}" placeholder="cargo test, npm run build"><div class="hint">${esc(t('ed.commandsHint'))}</div></div>` : ''}
+    <label class="switch"><input type="checkbox" data-sw="${key}|auto"${o.auto ? ' checked' : ''}><span></span>${esc(t('ed.auto'))}</label>
+    <div class="hint" style="margin:-4px 0 10px;color:var(--dim);font-size:11.5px;line-height:1.5">${esc(t(o.auto ? 'ed.autoOn' : 'ed.autoHint'))}</div>
+    ${!o.auto && LEVELS.indexOf(o.level) >= 1 ? `<div class="ed-field"><label>${esc(t('ed.commands'))}</label><input class="field-in" data-f="${key}|commands" value="${esc(o.commands || '')}" placeholder="cargo test, npm run build"><div class="hint">${esc(t('ed.commandsHint'))}</div></div>` : ''}
     <label class="switch"><input type="checkbox" data-sw="${key}|web"${o.web ? ' checked' : ''}><span></span>${esc(t('ed.web'))}</label>
     <label class="switch"><input type="checkbox" data-sw="${key}|noDelete"${o.noDelete !== false ? ' checked' : ''}><span></span>${esc(t('ed.noDelete'))}</label>
     <label class="switch"><input type="checkbox" data-sw="${key}|planOnly"${o.planOnly ? ' checked' : ''}><span></span>${esc(t('ed.planOnly'))}</label>
@@ -500,7 +513,15 @@ function profileEditor(box) {
   box.innerHTML = `<p class="meta" style="margin-top:0">${esc(t('todo.profileHint'))}</p>${rightsFields(p, 'todo')}
     <div class="ed-field"><label>${esc(t('todo.extra'))}</label><textarea class="small" data-f="todo|prompt" placeholder="${esc(t('todo.extraPh'))}">${esc(p.prompt || '')}</textarea></div>`;
 }
-function target(key) { return key === 'todo' ? cfg.todo : routineOf(key.slice(2)); }
+function listEditor(box, f) {
+  const key = 'l:' + cfg.todoFiles.indexOf(f);
+  box.innerHTML = `<div class="it-head"><b title="${esc(f.path)}">${esc(baseName(f.path))}</b></div>
+    <label class="switch"><input type="checkbox" data-own="${esc(f.path)}"${f.own ? ' checked' : ''}><span></span>${esc(t('todo.own'))}</label>
+    <p class="meta">${esc(f.own ? t('todo.ownHint') : t('todo.ownOff'))}</p>
+    ${f.own ? `${rightsFields(f, key)}<div class="ed-field"><label>${esc(t('todo.extra'))}</label><textarea class="small" data-f="${key}|prompt" placeholder="${esc(t('todo.extraPh'))}">${esc(f.prompt || '')}</textarea></div>`
+      : `<p><button class="btn-sm" data-todo-general>${esc(t('todo.editGeneral'))}</button></p>`}`;
+}
+function target(key) { return key === 'todo' ? cfg.todo : key.startsWith('l:') ? cfg.todoFiles[+key.slice(2)] : routineOf(key.slice(2)); }
 $('#details').addEventListener('input', e => {
   const d = e.target.dataset;
   if (d.f) {
@@ -513,7 +534,14 @@ $('#details').addEventListener('input', e => {
 });
 $('#details').addEventListener('change', e => {
   const d = e.target.dataset;
-  if (d.sw) { const [key, f] = d.sw.split('|'), o = target(key); if (o) { o[f] = e.target.checked; saveCfg(); renderView(); } }
+  if (d.own) {
+    const f = listOf(d.own);
+    // The list's own settings start as a copy of the ones for all lists.
+    if (e.target.checked && !f.dirs) Object.assign(f, JSON.parse(JSON.stringify({dirs: cfg.todo.dirs, level: cfg.todo.level, commands: cfg.todo.commands, web: cfg.todo.web,
+      noDelete: cfg.todo.noDelete, auto: cfg.todo.auto, maxMinutes: cfg.todo.maxMinutes, model: cfg.todo.model, prompt: cfg.todo.prompt})));
+    f.own = e.target.checked; saveCfg(); renderAll(); return;
+  }
+  if (d.sw) { const [key, f] = d.sw.split('|'), o = target(key); if (o) { o[f] = e.target.checked; saveCfg(); renderAll(); } }
   if (d.sched && sel && sel.type === 'routine') {
     const r = routineOf(sel.id);
     r.schedule[d.sched] = d.sched === 'day' ? +e.target.value : e.target.value;
@@ -528,6 +556,7 @@ $('#details').addEventListener('click', async e => {
   if (!b) return;
   const d = b.dataset;
   if (d.level) { const [key, l] = d.level.split('|'); target(key).level = l; saveCfg(); renderAll(); return; }
+  if (d.todoGeneral !== undefined) { sel = {type: 'todo'}; renderAll(); return; }
   if (d.dirAdd) {
     if (!invoke) return toast(t('ui.appOnly'));
     const p = await invoke('pick_folder');
@@ -601,7 +630,8 @@ $('#view').addEventListener('click', async e => {
   if (d.stopRoutine) { const r = data.runs.find(x => x.spec.routineId === d.stopRoutine && isRunning(x.id)); if (r) stopRun(r.id); return; }
   if (d.doitem) { const it = (todos[d.doitem].items || []).find(i => i.line === +d.line); if (it) doItem(d.doitem, it); return; }
   if (d.doall) return doList(d.doall);
-  if (d.unlink) { cfg.todoFiles = cfg.todoFiles.filter(f => f.path !== d.unlink); saveCfg(); return renderView(); }
+  if (d.unlink) { cfg.todoFiles = cfg.todoFiles.filter(f => f.path !== d.unlink); if (sel && sel.type === 'list' && sel.id === d.unlink) sel = null; saveCfg(); return renderAll(); }
+  if (d.listEdit) { sel = {type: 'list', id: d.listEdit}; return renderAll(); }
   if (d.todoEdit !== undefined || d.todoProfile !== undefined) { sel = {type: 'todo'}; return renderAll(); }
   if (d.run) { sel = {type: 'run', id: d.run}; return renderAll(); }
   if (d.routine) { sel = {type: 'routine', id: d.routine}; return renderAll(); }
@@ -632,7 +662,7 @@ function newTask() {
     if (e.target.id === 'taskPrompt') o.prompt = e.target.value;
     const f = e.target.dataset.f; if (f) { const k = f.split('|')[1]; o[k] = k === 'maxMinutes' ? Math.max(0, +e.target.value || 0) : e.target.value; }
   };
-  form.onchange = e => { const s = e.target.dataset.sw; if (s) { o[s.split('|')[1]] = e.target.checked; } };
+  form.onchange = e => { const s = e.target.dataset.sw; if (s) { o[s.split('|')[1]] = e.target.checked; if (s.endsWith('|auto')) draw(); } };
   form.onclick = async e => {
     const b = e.target.closest('button'); if (!b) return;
     const d = b.dataset;

@@ -32,6 +32,8 @@ pub struct Spec {
     pub no_delete: bool,
     /// Only plan: say what would be done, change nothing.
     pub plan_only: bool,
+    /// Auto mode: Claude Code decides itself which steps are safe (no question for each one); the level stays the limit.
+    pub auto: bool,
     pub max_minutes: u32,
     pub model: String,
     pub rules: Vec<String>,
@@ -69,11 +71,19 @@ pub fn rules(s: &Spec) -> (Vec<String>, Vec<String>) {
     if s.web { allow.extend(["WebFetch", "WebSearch"].map(String::from)); }
     allow.extend(s.allow_once.iter().cloned());
     let mut deny: Vec<String> = Vec::new();
+    // In auto mode everything the level doesn't allow is refused outright (otherwise Claude Code would decide).
+    if s.auto {
+        if lv < 1 { deny.extend(["Edit", "Write", "MultiEdit", "NotebookEdit"].map(String::from)); }
+        if lv < 2 { for c in ["git add", "git commit", "git mv", "git rm", "git stash", "git reset", "git checkout", "git switch", "git merge", "git rebase", "git cherry-pick", "git revert"] { deny.extend(bash(c)); } }
+        if lv < 3 { for c in ["git push", "git tag", "gh release", "gh pr", "gh workflow", "gh run rerun", "gh repo", "gh api", "npm publish", "cargo publish"] { deny.extend(bash(c)); } }
+        if !s.web { deny.extend(["WebFetch", "WebSearch"].map(String::from)); }
+    }
     for c in ["git push --force", "git push -f", "git push --force-with-lease", "git reset --hard", "git clean", "sudo"] { deny.extend(bash(c)); }
     if s.no_delete { for c in ["rm", "rmdir", "git rm", "del", "rd", "Remove-Item", "unlink", "find . -delete"] { deny.extend(bash(c)); } }
     // An approval of one command wins over a refusal it falls under (e.g. one "rm build/x" while deleting is off).
     let once: Vec<String> = s.allow_once.iter().filter_map(|a| a.strip_prefix("Bash(").and_then(|x| x.strip_suffix(')'))).map(str::to_string).collect();
     deny.retain(|d| {
+        if s.allow_once.contains(d) { return false; }
         let pre = d.strip_prefix("Bash(").and_then(|x| x.strip_suffix(')')).map(|x| x.trim_end_matches(" *"));
         !pre.is_some_and(|p| once.iter().any(|o| o == p || o.starts_with(&format!("{p} "))))
     });
@@ -91,6 +101,7 @@ fn level_text(s: &Spec, de: bool) -> String {
     if lv >= 1 && !s.commands.is_empty() { t += &format!("{}{}", if de { "; erlaubte Befehle: " } else { "; allowed commands: " }, s.commands.join(", ")); }
     if s.web { t += if de { "; Internet erlaubt" } else { "; internet allowed" }; }
     if s.no_delete { t += if de { "; nichts löschen" } else { "; never delete" }; }
+    if s.auto && !s.plan_only { t += if de { ". Auto-Modus: Innerhalb dieser Rechte arbeitest du selbstständig, ohne für jeden Schritt zu fragen; riskante Schritte prüft Claude Code und lehnt sie ab" } else { ". Auto mode: within these rights you work on your own without asking for each step; Claude Code checks risky steps and refuses them" }; }
     t
 }
 
@@ -134,7 +145,7 @@ pub fn args(s: &Spec) -> Vec<String> {
     let extra: Vec<&String> = s.dirs.iter().skip(1).collect();
     let settings = json!({"permissions": {"allow": allow, "deny": deny, "additionalDirectories": extra}});
     let mut a: Vec<String> = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode"].map(String::from).to_vec();
-    a.push(if s.plan_only { "plan" } else { "dontAsk" }.into());
+    a.push(if s.plan_only { "plan" } else if s.auto { "auto" } else { "dontAsk" }.into());
     a.extend(["--setting-sources".into(), String::new(), "--settings".into(), settings.to_string(), "--append-system-prompt".into(), system_prompt(s)]);
     if !s.model.trim().is_empty() { a.extend(["--model".into(), s.model.trim().into()]); }
     if let Some(r) = s.resume.as_ref().filter(|r| !r.is_empty()) { a.extend(["--resume".into(), r.clone()]); }
@@ -416,6 +427,24 @@ mod tests {
     }
 
     #[test]
+    fn auto_mode_keeps_the_level_as_limit() {
+        let mut s = spec("edit");
+        s.auto = true;
+        let (a, d) = rules(&s);
+        assert!(a.contains(&"Edit".into()) && !d.contains(&"Edit".into()));
+        assert!(d.contains(&"Bash(git commit *)".into()) && d.contains(&"Bash(git push *)".into()) && d.contains(&"WebFetch".into()));
+        s.level = "publish".into();
+        s.web = true;
+        let (_, d) = rules(&s);
+        assert!(!d.iter().any(|x| x.contains("git commit") || x == "Bash(git push *)" || x == "WebFetch"));
+        assert!(d.contains(&"Bash(git push --force *)".into()), "never force-push");
+        s.level = "read".into();
+        assert!(rules(&s).1.contains(&"Write".into()));
+        s.auto = false;
+        assert!(!rules(&s).1.contains(&"Write".into()), "without auto mode nothing beyond the level is allowed anyway");
+    }
+
+    #[test]
     fn approval_beats_its_refusal() {
         let mut s = spec("edit");
         s.no_delete = true;
@@ -424,6 +453,10 @@ mod tests {
         let (a, d) = rules(&s);
         assert!(a.contains(&"Bash(rm build/old.txt)".into()) && !d.iter().any(|x| x == "Bash(rm)" || x == "Bash(rm *)"));
         assert!(d.contains(&"Bash(git rm *)".into()), "other refusals stay");
+        let mut s = spec("read");
+        s.auto = true;
+        s.allow_once = vec!["Write".into()];
+        assert!(!rules(&s).1.contains(&"Write".into()), "an approved tool is not refused in auto mode");
     }
 
     #[test]
@@ -439,6 +472,8 @@ mod tests {
         assert_eq!(a[a.iter().position(|x| x == "--setting-sources").unwrap() + 1], "");
         assert!(a.windows(2).any(|w| w == ["--model", "sonnet"]) && a.windows(2).any(|w| w == ["--resume", "abc"]));
         assert!(a[a.iter().position(|x| x == "--append-system-prompt").unwrap() + 1].contains("committen"));
+        s.auto = true;
+        assert_eq!(args(&s)[5], "auto");
         s.plan_only = true;
         assert_eq!(args(&s)[5], "plan");
     }

@@ -270,7 +270,9 @@ body{grid-template-columns:minmax(0,1fr)}
 .pcard{background:var(--card-bg);border:1px solid var(--card-border);border-radius:calc(var(--radius) + 4px);padding:12px 14px;margin:0 0 12px}
 .pcard h2{margin:0 0 8px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);display:flex;gap:8px;align-items:center}
 .pcard h2 .flex{flex:1}
-.pcard h2 .btn-sm{height:22px;font-size:11px;text-transform:none;letter-spacing:0}
+.pcard h2{flex-wrap:wrap;row-gap:6px}
+.pcard h2 .btn-sm{height:22px;font-size:11px;text-transform:none;letter-spacing:0;white-space:nowrap}
+.pcard h2 .switch{white-space:nowrap}
 .pcard.sel{border-color:var(--accent)}
 .pcard.question,.pcard.approval{border-left:4px solid var(--warn)}
 .pcard.problem{border-left:4px solid var(--danger)}
