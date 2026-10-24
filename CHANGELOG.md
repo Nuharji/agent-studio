@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 — 2026-10-24
+- Tasks in full view: a run fills the whole window instead of the side panel — View → Task in full view (Alt+Enter),
+  a double-click on a run (Needs you, to-dos, history), "Full view" in the panel or ⤢ on a card in "Needs you". The
+  log in full height, summary and answer buttons on top, the chat below, details, changed files and commits on the
+  side. A message, an answer or "Run again" stays in full view and follows to the new run. Esc or "Back" closes it.
+- A message to Claude being typed is no longer lost when the run's details are redrawn.
+
 ## 0.3.0 — 2026-10-24
 - New to-dos right in Agent Studio: each linked list has a field to add an item — pick the section (the file's headings,
   e.g. "Medium priority"; the last one used is remembered) and press Enter. The item goes into the file at the end of

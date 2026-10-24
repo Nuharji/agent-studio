@@ -362,6 +362,20 @@ body{grid-template-columns:minmax(0,1fr)}
 .usage{height:6px;border-radius:3px;background:var(--hover);overflow:hidden;max-width:360px;margin:6px 0}.usage i{display:block;height:100%;background:var(--accent)}
 .task-form .field-in{width:100%}
 .task-form textarea{width:100%;box-sizing:border-box;height:130px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:var(--radius);padding:8px;font:inherit;resize:vertical;outline:0;line-height:1.5}
+/* A task in full view: the main area instead of the panel */
+.view-main.full{padding:16px 26px 30px}
+.full-run .view-title{position:sticky;top:-16px;z-index:3;background:var(--workarea);padding:12px 0 10px;margin:-12px 0 8px;border-bottom:1px solid var(--border)}
+.full-run .view-title h1{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.full-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+.full-main>.group-h:first-child{margin-top:4px}
+.full-run .it-text{max-height:none;font-size:13px}
+.full-run .log{max-height:none;min-height:240px;font-size:12px}
+.full-run .log .text{font-size:13px}
+.full-run .chat textarea{height:90px;font-size:13px}
+.full-side{position:sticky;top:52px;max-height:calc(100vh - 190px);overflow:auto}
+.full-side>.group-h:first-of-type{margin-top:12px}
+.full-side .kv b{max-width:200px}
+@media (max-width:860px){.full-grid{grid-template-columns:minmax(0,1fr)}.full-side{position:static;max-height:none}}
 .st-run::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px}
 .st-run.busy::before{background:var(--accent);animation:pulse 1.2s infinite}
 .st-run.need::before{background:var(--warn)}

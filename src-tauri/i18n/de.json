@@ -344,5 +344,8 @@
  "todo.add": "Hinzufügen",
  "todo.addGo": "Hinzufügen & machen",
  "todo.addGoHint": "Fügt das To-do hinzu und lässt Claude gleich daran arbeiten (Strg+Enter)",
- "todo.added": "Hinzugefügt: {text}"
+ "todo.added": "Hinzugefügt: {text}",
+ "a.openFull": "Task im Vollbild",
+ "full.open": "Vollbild",
+ "full.back": "Zurück"
 }

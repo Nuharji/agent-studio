@@ -101,7 +101,7 @@ async function startRun(spec, {show = true, manual = true} = {}) {
   try {
     const id = await invoke('run_start', {spec});
     await refresh();
-    if (show) { sel = {type: 'run', id}; renderAll(); }
+    if (show) showRun(id);
     return id;
   } catch (e) { toast(String(e)); return null; }
 }
@@ -321,14 +321,17 @@ $('#modalBody').addEventListener('click', e => {
 
 /* ================= Views ================= */
 const VIEWS = ['inbox', 'todos', 'routines', 'history'];
-function setView(v) { settings.view = v; saveSettings(); renderAll(); }
-function renderAll() { renderView(); renderDetails(); updateStatus(); syncTools(); }
+function setView(v) { settings.view = v; full = null; saveSettings(); renderAll(); }
+function renderAll() { renderView(); renderDetails(); updateStatus(); syncTools(); $('#dock').classList.toggle('hidden', !settings.dock || !!full); }
 function renderView() {
   const box = $('#view');
   const keep = box.scrollTop, a = document.activeElement, typingIn = a && box.contains(a) && a.dataset.addText;
   const caret = typingIn ? [a.selectionStart, a.selectionEnd] : null;
-  box.innerHTML = {inbox: viewInbox, todos: viewTodos, routines: viewRoutines, history: viewHistory}[settings.view]();
+  if (full && !runOf(full)) full = null;
+  box.classList.toggle('full', !!full);
+  box.innerHTML = full ? viewFull(runOf(full)) : {inbox: viewInbox, todos: viewTodos, routines: viewRoutines, history: viewHistory}[settings.view]();
   box.scrollTop = keep;
+  if (full) loadLog(runOf(full));
   // A new to-do being typed stays focused when the lists are redrawn (e.g. because the file changed).
   const el = typingIn && box.querySelector(`[data-add-text="${CSS.escape(typingIn)}"]`);
   if (el) { el.focus({preventScroll: true}); el.setSelectionRange(...caret); }
@@ -365,10 +368,10 @@ function viewInbox() {
   if (items.length && running.length) h += `<div class="group-h">${esc(t('inbox.forYou'))}</div>`;
   return h + items.map(itemCard).join('');
 }
-function itemCard(it) {
+function itemCard(it, inFull) {
   const r = runOf(it.runId), when = fmtWhen(it.created);
   const head = `<div class="it-head"><b>${esc(t('kind.' + it.kind))}</b><span class="meta">${esc(it.title || '')} · ${esc(when)}</span><span class="flex"></span>
-    ${r ? `<button class="btn-sm" data-open-run="${esc(r.id)}">${esc(t('inbox.open'))}</button>` : ''}</div>`;
+    ${r && !inFull ? `<button class="btn-sm" data-open-run="${esc(r.id)}">${esc(t('inbox.open'))}</button><button class="btn-sm" data-full="${esc(r.id)}" title="${esc(tip('openFull'))}">&#10530;</button>` : ''}</div>`;
   const text = `<div class="it-text${it.kind === 'done' ? ' short' : ''}">${esc(it.text)}</div>`;
   let body = '';
   if (it.kind === 'approval') {
@@ -475,6 +478,7 @@ function viewHistory() {
 let logFor = null;
 function renderDetails() {
   const box = $('#details');
+  if (full) { box.innerHTML = ''; return; }   // the run is shown in the main area
   logFor = null;
   if (sel && sel.type === 'run' && runOf(sel.id)) return runDetails(box, runOf(sel.id));
   if (sel && sel.type === 'routine' && routineOf(sel.id)) return routineEditor(box, routineOf(sel.id));
@@ -483,33 +487,57 @@ function renderDetails() {
   box.innerHTML = `<div class="empty-s">${esc(t('det.none'))}</div>
     <div class="group-h">${esc(t('det.levels'))}</div>${LEVELS.map(l => `<div class="kv"><span>${esc(t('lv.' + l))}</span></div><div class="meta" style="margin:-2px 0 6px">${esc(t('lv.' + l + '.hint'))}</div>`).join('')}`;
 }
-function runDetails(box, r) {
+/* The parts of a run's details: in the panel one below the other, in the full view (openFull) in two columns. */
+function runParts(r) {
   const st = stOf(r);
   const commits = r.repos.flatMap(x => x.commits), files = r.repos.flatMap(x => x.files.map(f => ({dir: x.dir, f})));
   const canUndo = !r.undone && commits.length && !r.repos.some(x => x.pushed);
   const prev = r.spec.continues && runOf(r.spec.continues), next = nextOf(r.id);
-  let h = `<div class="it-head"><b>${esc(r.spec.title)}</b>${statusBadge(st)}</div>
-    <div class="kv"><span>${esc(t('det.started'))}</span><b>${esc(fmtWhen(r.started))}</b></div>
+  const p = {st};
+  p.info = `<div class="kv"><span>${esc(t('det.started'))}</span><b>${esc(fmtWhen(r.started))}</b></div>
     <div class="kv"><span>${esc(t('det.duration'))}</span><b>${esc(fmtDur((r.ended || Date.now()) - r.started))}</b></div>
     <div class="kv"><span>${esc(t('det.rights'))}</span><b>${esc(t('lv.' + r.spec.level))}${r.spec.planOnly ? ' · ' + esc(t('rt.planOnly')) : r.spec.auto ? ' · ' + esc(t('ed.autoShort')) : ''}</b></div>
     <div class="kv"><span>${esc(t('det.dirs'))}</span><b title="${esc(r.spec.dirs.join('\n'))}">${esc(r.spec.dirs.map(baseName).join(', '))}</b></div>
     ${prev ? `<div class="kv"><span>${esc(t('det.continues'))}</span><b><a href="#" data-open-run="${esc(prev.id)}">${esc(fmtWhen(prev.started))}</a></b></div>` : ''}
-    ${next ? `<div class="kv"><span>${esc(t('det.continued'))}</span><b><a href="#" data-open-run="${esc(next.id)}">${esc(fmtWhen(next.started))}</a></b></div>` : ''}
-    <div class="d-actions">${st === 'running' ? `<button class="btn-sm" data-stop="${esc(r.id)}" style="color:var(--danger)">${esc(t('run.stop'))}</button>` : `<button class="btn-sm" data-again="${esc(r.id)}">${esc(t('run.again'))}</button>`}
+    ${next ? `<div class="kv"><span>${esc(t('det.continued'))}</span><b><a href="#" data-open-run="${esc(next.id)}">${esc(fmtWhen(next.started))}</a></b></div>` : ''}`;
+  p.actions = `${st === 'running' ? `<button class="btn-sm" data-stop="${esc(r.id)}" style="color:var(--danger)">${esc(t('run.stop'))}</button>` : `<button class="btn-sm" data-again="${esc(r.id)}">${esc(t('run.again'))}</button>`}
       ${r.repos.length ? `<button class="btn-sm" data-diff="${esc(r.id)}">${esc(t('run.diff'))}</button>` : ''}
-      ${canUndo ? `<button class="btn-sm" data-undo="${esc(r.id)}">${esc(t('run.undo'))}</button>` : ''}</div>`;
-  if (r.error) h += `<div class="group-h" style="color:var(--danger)">${esc(t('det.problem'))}</div><div class="it-text">${esc(r.error)}</div>`;
-  if (r.summary) h += `<div class="group-h">${esc(t('det.summary'))}</div><div class="it-text">${esc(r.summary)}</div>`;
-  if (r.needs) h += `<div class="group-h" style="color:var(--warn)">${esc(t('kind.' + (r.needs.kind === 'approval' ? 'approval' : 'question')))}</div><div class="it-text">${esc(r.needs.text)}</div>`;
-  if (r.denials.length) h += `<div class="group-h" style="color:var(--warn)">${esc(t('det.denied'))}</div><ul class="denials">${r.denials.map(d => `<li>${esc(d.what || d.rule)}</li>`).join('')}</ul>`;
-  if (commits.length) h += `<div class="group-h">${esc(t('det.commits'))}${r.undone ? ' · ' + esc(t('run.undone')) : ''}${r.repos.some(x => x.pushed) ? ' · ' + esc(t('run.pushed')) : ''}</div><ul class="files">${commits.map(c => `<li>${esc(c)}</li>`).join('')}</ul>`;
-  if (files.length) h += `<div class="group-h">${esc(tn('det.files', files.length))}</div><ul class="files">${files.slice(0, 80).map(x => `<li data-reveal="${esc(x.dir + '/' + x.f)}" title="${esc(x.dir)}">${esc(x.f)}</li>`).join('')}</ul>`;
-  h += `<div class="group-h">${esc(t('det.log'))}</div><div class="log" id="runLog"><div class="info ph">…</div></div>`;
-  if (r.sessionId || st !== 'running') h += `<div class="group-h">${esc(t('det.chat'))}</div><div class="chat"><textarea id="chatIn" placeholder="${esc(t('det.chatPh'))}"></textarea>
-    <div class="d-actions" style="margin:0"><button class="btn-sm primary" data-chat="${esc(r.id)}"${st === 'running' ? ' disabled' : ''}>${esc(t('det.send'))}</button><span class="meta">${esc(t('det.chatHint'))}</span></div></div>`;
-  box.innerHTML = h;
+      ${canUndo ? `<button class="btn-sm" data-undo="${esc(r.id)}">${esc(t('run.undo'))}</button>` : ''}`;
+  p.result = (r.error ? `<div class="group-h" style="color:var(--danger)">${esc(t('det.problem'))}</div><div class="it-text">${esc(r.error)}</div>` : '')
+    + (r.summary ? `<div class="group-h">${esc(t('det.summary'))}</div><div class="it-text">${esc(r.summary)}</div>` : '');
+  p.needs = r.needs ? `<div class="group-h" style="color:var(--warn)">${esc(t('kind.' + (r.needs.kind === 'approval' ? 'approval' : 'question')))}</div><div class="it-text">${esc(r.needs.text)}</div>` : '';
+  p.changes = (r.denials.length ? `<div class="group-h" style="color:var(--warn)">${esc(t('det.denied'))}</div><ul class="denials">${r.denials.map(d => `<li>${esc(d.what || d.rule)}</li>`).join('')}</ul>` : '')
+    + (commits.length ? `<div class="group-h">${esc(t('det.commits'))}${r.undone ? ' · ' + esc(t('run.undone')) : ''}${r.repos.some(x => x.pushed) ? ' · ' + esc(t('run.pushed')) : ''}</div><ul class="files">${commits.map(c => `<li>${esc(c)}</li>`).join('')}</ul>` : '')
+    + (files.length ? `<div class="group-h">${esc(tn('det.files', files.length))}</div><ul class="files">${files.slice(0, 80).map(x => `<li data-reveal="${esc(x.dir + '/' + x.f)}" title="${esc(x.dir)}">${esc(x.f)}</li>`).join('')}</ul>` : '');
+  p.log = `<div class="group-h">${esc(t('det.log'))}</div><div class="log" id="runLog"><div class="info ph">…</div></div>`;
+  p.chat = r.sessionId || st !== 'running' ? `<div class="group-h">${esc(t('det.chat'))}</div><div class="chat"><textarea id="chatIn" data-chat-in="${esc(r.id)}" placeholder="${esc(t('det.chatPh'))}">${esc(chatDraft[r.id] || '')}</textarea>
+    <div class="d-actions" style="margin:0"><button class="btn-sm primary" data-chat="${esc(r.id)}"${st === 'running' ? ' disabled' : ''}>${esc(t('det.send'))}</button><span class="meta">${esc(t('det.chatHint'))}</span></div></div>` : '';
+  return p;
+}
+const chatDraft = {};    // run id → message being typed (survives redraws)
+function runDetails(box, r) {
+  const p = runParts(r);
+  box.innerHTML = `<div class="it-head"><b>${esc(r.spec.title)}</b>${statusBadge(p.st)}<span class="flex"></span>
+    <button class="btn-sm" data-full="${esc(r.id)}" title="${esc(tip('openFull'))}">&#10530; ${esc(t('full.open'))}</button></div>
+    ${p.info}<div class="d-actions">${p.actions}</div>${p.result}${p.needs}${p.changes}${p.log}${p.chat}`;
+  loadLog(r);
+}
+function loadLog(r) {
   logFor = r.id;
-  if (invoke) invoke('run_log', {id: r.id}).then(ls => { if (logFor === r.id) { $('#runLog').innerHTML = ls.map(logLine).join('') || `<div class="info ph">${esc(t('det.noLog'))}</div>`; scrollLog(true); } });
+  if (invoke) invoke('run_log', {id: r.id}).then(ls => { if (logFor === r.id && $('#runLog')) { $('#runLog').innerHTML = ls.map(logLine).join('') || `<div class="info ph">${esc(t('det.noLog'))}</div>`; scrollLog(true); } });
+}
+/* A task in full view: the whole window instead of the panel (Alt+Enter, double-click, "Full view"). */
+let full = null;         // run id shown in full view
+function openFull(id) { if (!runOf(id)) return; full = id; sel = {type: 'run', id}; renderAll(); $('#view').scrollTop = 0; }
+function closeFull() { full = null; renderAll(); }
+function showRun(id) { sel = {type: 'run', id}; if (full) full = id; renderAll(); }
+function viewFull(r) {
+  const p = runParts(r), notes = data.inbox.filter(i => i.runId === r.id);
+  return `<div class="full-run"><div class="view-title"><button class="btn-sm" data-full-close title="${esc(t('full.back'))} (Esc)">&larr; ${esc(t('full.back'))}</button>
+      <h1>${esc(r.spec.title)}</h1>${statusBadge(p.st)}<span class="flex"></span>${p.actions}</div>
+    ${notes.map(i => itemCard(i, true)).join('')}
+    <div class="full-grid"><div class="full-main">${p.result}${notes.length ? '' : p.needs}${p.log}${p.chat}</div>
+      <aside class="pcard full-side">${p.info}${p.changes}</aside></div></div>`;
 }
 const logLine = l => `<div class="${esc(l.kind)}"><time>${esc(new Date(l.t).toLocaleTimeString(locale()))}</time>${esc(l.text)}</div>`;
 function scrollLog(force) { const el = $('#runLog'); if (el && (force || el.scrollHeight - el.scrollTop - el.clientHeight < 60)) el.scrollTop = el.scrollHeight; }
@@ -602,12 +630,6 @@ $('#details').addEventListener('click', async e => {
     return;
   }
   if (d.dirDel) { const [key, i] = d.dirDel.split('|'); target(key).dirs.splice(+i, 1); saveCfg(); renderAll(); return; }
-  if (d.chat) {
-    const text = $('#chatIn').value.trim();
-    if (!text) return;
-    try { const id = await invoke('run_message', {id: d.chat, text}); await refresh(); sel = {type: 'run', id}; renderAll(); } catch (err) { toast(String(err)); }
-    return;
-  }
   if (d.dup) { const r = routineOf(d.dup), c = {...JSON.parse(JSON.stringify(r)), id: uid(), name: r.name + ' ' + t('rt.copy'), created: Date.now(), lastRun: 0}; cfg.routines.push(c); saveCfg(); sel = {type: 'routine', id: c.id}; renderAll(); return; }
   if (d.delRoutine) {
     const r = routineOf(d.delRoutine);
@@ -619,7 +641,14 @@ $('#details').addEventListener('click', async e => {
 /* Buttons that exist in the views and in the panel. */
 async function common(b, e) {
   const d = b.dataset;
-  if (d.openRun) { e && e.preventDefault(); sel = {type: 'run', id: d.openRun}; renderAll(); return true; }
+  if (d.openRun) { e && e.preventDefault(); showRun(d.openRun); return true; }
+  if (d.full) { openFull(d.full); return true; }
+  if (d.chat) {
+    const text = $('#chatIn').value.trim();
+    if (!text) { $('#chatIn').focus(); return true; }
+    try { const id = await invoke('run_message', {id: d.chat, text}); delete chatDraft[d.chat]; await refresh(); showRun(id); } catch (err) { toast(String(err)); }
+    return true;
+  }
   if (d.stop) { stopRun(d.stop); return true; }
   if (d.start) { const r = routineOf(d.start); if (r) startRoutine(r, true); return true; }
   if (d.again) { const r = runOf(d.again), f = firstOf(r); startRun({...f.spec, resume: null, continues: null, allowOnce: []}); return true; }
@@ -645,16 +674,17 @@ async function showDiff(id) {
 
 /* ================= View clicks ================= */
 $('#view').addEventListener('click', async e => {
-  const b = e.target.closest('button,[data-run],[data-routine],[data-todo-profile],a');
+  const b = e.target.closest('button,[data-run],[data-routine],[data-todo-profile],[data-reveal],a');
   if (!b) return;
   const d = b.dataset;
-  if (b.tagName === 'BUTTON' && await common(b, e)) return;
+  if ((b.tagName === 'BUTTON' || b.tagName === 'A' || d.reveal) && await common(b, e)) return;
+  if (d.fullClose !== undefined) return closeFull();
   const note = id => { const el = $(`[data-note="${id}"]`); return el ? el.value : ''; };
   const answer = async (id, text, approve) => {
     try {
       const run = await invoke('inbox_answer', {id, text, approve: approve ?? null});
       await refresh();
-      if (run) { sel = {type: 'run', id: run}; renderAll(); toast(t('inbox.going')); }
+      if (run) { showRun(run); toast(t('inbox.going')); }
     } catch (err) { toast(String(err)); }
   };
   if (d.approve) return answer(d.approve, note(d.approve), true);
@@ -683,6 +713,12 @@ $('#view').addEventListener('change', e => {
   if (d.enable) { const r = routineOf(d.enable); r.enabled = e.target.checked; if (r.enabled) r.created = Math.max(r.created || 0, Date.now() - 1); saveCfg(); renderAll(); }
 });
 $('#view').addEventListener('input', e => { const p = e.target.dataset.addText; if (p !== undefined) addDraft[p] = e.target.value; });
+$('#view').addEventListener('dblclick', e => {
+  const b = e.target.closest('[data-run]');
+  if (b && !e.target.closest('button,input,select,textarea,a')) openFull(b.dataset.run);
+});
+// The message to Claude being typed stays when the run's details are redrawn (panel and full view).
+document.addEventListener('input', e => { const id = e.target.dataset && e.target.dataset.chatIn; if (id) chatDraft[id] = e.target.value; });
 $('#view').addEventListener('keydown', e => {
   const p = e.target.dataset && e.target.dataset.addText;
   if (p && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); return addItem(p, e.metaKey || e.ctrlKey); }
@@ -777,6 +813,7 @@ listen('login-done', e => { loginBusy = false; toast(e.payload ? t('cl.loginOk')
 /* ================= Menus, toolbars ================= */
 const A = {
   newTask, newRoutine, linkTodo, stopAll,
+  openFull: () => { if (full) closeFull(); else if (sel && sel.type === 'run') openFull(sel.id); },
   newTodo: () => {
     if (!cfg.todoFiles.length) return linkTodo();
     if (settings.view !== 'todos') setView('todos');
@@ -808,7 +845,7 @@ const A = {
 const MENUS = [
   ['agent', [['newTask', 'Ctrl+N'], ['newRoutine', 'Ctrl+Shift+N'], ['linkTodo', 'Ctrl+L'], ['newTodo', 'Ctrl+T'], '-', ['runSel', 'Ctrl+R'], ['stopAll', 'Ctrl+.'], '-', ['dismissDone'], ['clearHistory']]],
   ['view', [['viewInbox', 'Alt+1', () => settings.view === 'inbox'], ['viewTodos', 'Alt+2', () => settings.view === 'todos'], ['viewRoutines', 'Alt+3', () => settings.view === 'routines'],
-    ['viewHistory', 'Alt+4', () => settings.view === 'history'], '-', ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
+    ['viewHistory', 'Alt+4', () => settings.view === 'history'], '-', ['openFull', 'Alt+Enter', () => !!full], ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
   ['settings', [['settings', 'Ctrl+,'], ['claudeSettings'], ['controlSettings'], '-', '#menu.language',
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
     '-', '#menu.theme',
@@ -816,7 +853,7 @@ const MENUS = [
     ['themeGithub', null, () => settings.theme === 'github'], ['themeGithubDark', null, () => settings.theme === 'github-dark']]],
   ['help', [['shortcuts', 'F1'], '-', ['about']]]
 ];
-const allowed = act => (act !== 'stopAll' || data.running.length > 0) && (act !== 'runSel' || !!(sel && (sel.type === 'routine' || sel.type === 'run')))
+const allowed = act => (act !== 'stopAll' || data.running.length > 0) && (act !== 'openFull' || !!full || !!(sel && sel.type === 'run' && runOf(sel.id))) && (act !== 'runSel' || !!(sel && (sel.type === 'routine' || sel.type === 'run')))
   && (act !== 'dismissDone' || data.inbox.some(i => i.kind === 'done' || i.kind === 'problem')) && (act !== 'clearHistory' || data.runs.length > 0);
 function run(act) { if (A[act] && allowed(act)) A[act](); }
 function syncDisabled() { $$('[data-act]').forEach(b => b.disabled = !allowed(b.dataset.act)); }
@@ -1023,6 +1060,7 @@ window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if ($('#modal').classList.contains('show')) closeModal();
     else if (menuOpen) closeMenus();
+    else if (full) { if (typing()) document.activeElement.blur(); else closeFull(); }
     else if (sel) { sel = null; renderAll(); }
     return;
   }
@@ -1087,5 +1125,5 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
   setInterval(planTick, 30000);
   setTimeout(planTick, 16000);
   // Durations and "in 5 min" go on.
-  setInterval(() => { if (!typing() && booted) { updateStatus(); if (data.running.length && settings.view === 'inbox') renderView(); } }, 30000);
+  setInterval(() => { if (!typing() && booted) { updateStatus(); if (data.running.length && (settings.view === 'inbox' || full)) renderView(); } }, 30000);
 })();

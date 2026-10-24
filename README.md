@@ -35,6 +35,9 @@ API key and no password; routines, logs and history stay on your computer.
 - **See what Claude does:** a live log of every step (files, commands, what was refused), the **emergency stop** for
   everything, a history of every run with summary, changed files, commits and the **diff**, and **undo** of a run's
   commits (as long as they are not pushed).
+- **A task in full view:** open any run across the whole window (View → Task in full view, Alt+Enter, a double-click on
+  a run, or "Full view" in its panel) — the log in full height, the summary, changed files and commits beside it, the
+  answer buttons when it needs you and the chat below; Esc or "Back" returns to where you were.
 - **Talk to Claude:** go on with any run — a question, a correction, the next step — in the same conversation.
 - **Rules** for every run ("commit messages in German", "keep the changelog") and per routine, a **daily limit** of
   minutes, the time Claude worked today in the status bar.

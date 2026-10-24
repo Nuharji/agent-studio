@@ -344,5 +344,8 @@
  "todo.add": "Add",
  "todo.addGo": "Add & do it",
  "todo.addGoHint": "Adds the to-do and lets Claude work on it right away (Ctrl+Enter)",
- "todo.added": "Added: {text}"
+ "todo.added": "Added: {text}",
+ "a.openFull": "Task in full view",
+ "full.open": "Full view",
+ "full.back": "Back"
 }
