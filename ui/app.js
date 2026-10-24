@@ -58,10 +58,11 @@ const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true,
 let settings = {...DEF}, booted = false;
 const newCfg = () => ({version: 1, routines: [], todoFiles: [],
   todo: {dirs: [], level: 'edit', commands: '', web: false, noDelete: true, maxMinutes: 30, prompt: ''},
+  chat: {dirs: [], level: 'read', web: true, auto: false, noDelete: true, maxMinutes: 30, model: ''},
   rules: '', dailyMinutes: 0, claude: '', model: '', ticked: [], doneNotes: true});
 let cfg = newCfg();
 let data = {runs: [], inbox: [], running: []};
-let sel = null;          // {type: 'run' | 'routine' | 'todo', id}
+let sel = null;          // {type: 'run' | 'routine' | 'todo' | 'list', id}
 let claude = {path: null, version: '', status: null, checked: false};
 const todos = {};        // path → {items, stamp, error}
 const bootAt = Date.now();
@@ -88,6 +89,10 @@ const overLimit = () => +cfg.dailyMinutes > 0 && usedToday() >= +cfg.dailyMinute
 const stOf = r => isRunning(r.id) ? 'running' : r.status === 'needsYou' && nextOf(r.id) ? 'answered' : r.status;
 const nextOf = id => data.runs.find(r => r.spec.continues === id);
 const firstOf = r => { let x = r; for (let i = 0; i < 50 && x && x.spec.continues && runOf(x.spec.continues); i++) x = runOf(x.spec.continues); return x; };
+const lastOf = r => { let x = r; for (let i = 0; i < 500 && nextOf(x.id); i++) x = nextOf(x.id); return x; };
+/* The runs of a conversation up to `r`, the first one first. */
+const chainOf = r => { const out = []; for (let x = r; x && out.length < 500; x = x.spec.continues && runOf(x.spec.continues)) out.unshift(x); return out; };
+const isChat = r => !!(r && firstOf(r).spec.chat);
 
 /* ================= Runs ================= */
 function specFrom(o, extra = {}) {
@@ -320,7 +325,7 @@ $('#modalBody').addEventListener('click', e => {
 });
 
 /* ================= Views ================= */
-const VIEWS = ['inbox', 'todos', 'routines', 'history'];
+const VIEWS = ['inbox', 'todos', 'routines', 'history', 'chats'];
 function setView(v) { settings.view = v; full = null; saveSettings(); renderAll(); }
 function renderAll() {
   renderView(); renderDetails(); updateStatus(); syncTools(); $('#dock').classList.toggle('hidden', !settings.dock || !!full);
@@ -329,19 +334,23 @@ function renderAll() {
 }
 function renderView() {
   const box = $('#view');
-  const keep = box.scrollTop, a = document.activeElement, typingIn = a && box.contains(a) && a.dataset.addText, chatting = a && box.contains(a) && a.dataset.chatIn;
+  const keep = box.scrollTop, a = document.activeElement, typingIn = a && box.contains(a) && a.dataset.addText;
+  const chatting = a && box.contains(a) && (a.dataset.chatIn || (a.dataset.newChat !== undefined ? '\u0000new' : ''));
+  const atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   const caret = typingIn || chatting ? [a.selectionStart, a.selectionEnd] : null;
   if (full && !runOf(full)) full = null;
   box.classList.toggle('full', !!full);
-  box.innerHTML = full ? viewFull(runOf(full)) : {inbox: viewInbox, todos: viewTodos, routines: viewRoutines, history: viewHistory}[settings.view]();
+  box.innerHTML = full ? viewFull(runOf(full)) : {inbox: viewInbox, todos: viewTodos, routines: viewRoutines, history: viewHistory, chats: viewChats}[settings.view]();
   box.scrollTop = keep;
+  if (full && atEnd && isChat(runOf(full))) box.scrollTop = box.scrollHeight;   // a chat follows its newest message
+  if (full) fillSteps();
   if (full) loadLog(runOf(full));
   // A new to-do being typed stays focused when the lists are redrawn (e.g. because the file changed).
   const el = typingIn && box.querySelector(`[data-add-text="${CSS.escape(typingIn)}"]`);
   if (el) { el.focus({preventScroll: true}); el.setSelectionRange(...caret); }
   // The same for the chat box of the full view; it also keeps the height it has grown to.
   const c = box.querySelector('[data-grow]');
-  if (c) { growChat(c); if (chatting === c.dataset.chatIn) { c.focus({preventScroll: true}); c.setSelectionRange(...caret); } }
+  if (c) { growChat(c); if (chatting && chatting === (c.dataset.chatIn || (c.dataset.newChat !== undefined ? '\u0000new' : ''))) { c.focus({preventScroll: true}); c.setSelectionRange(...caret); } }
 }
 const statusBadge = st => `<span class="badge ${({running: 'blue', done: 'ok', needsYou: 'warn', failed: 'red', timeout: 'red'})[st] || ''}">${esc(t('st.' + st))}</span>`;
 const levelBadge = l => `<span class="badge${l === 'publish' ? ' warn' : ''}">${esc(t('lv.' + l))}</span>`;
@@ -371,7 +380,7 @@ function viewInbox() {
   const order = ['approval', 'question', 'problem', 'done'];
   const items = [...data.inbox].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || b.created - a.created);
   if (!items.length && !running.length) return h + emptyBig(t('inbox.emptyTitle'), t('inbox.empty'),
-    `<button class="btn-sm primary" data-act="newTask">${esc(t('a.newTask'))}</button><button class="btn-sm" data-act="viewTodos">${esc(t('a.viewTodos'))}</button><button class="btn-sm" data-act="newRoutine">${esc(t('a.newRoutine'))}</button>`);
+    `<button class="btn-sm primary" data-act="newChat">${esc(t('a.newChat'))}</button><button class="btn-sm" data-act="newTask">${esc(t('a.newTask'))}</button><button class="btn-sm" data-act="viewTodos">${esc(t('a.viewTodos'))}</button><button class="btn-sm" data-act="newRoutine">${esc(t('a.newRoutine'))}</button>`);
   if (items.length && running.length) h += `<div class="group-h">${esc(t('inbox.forYou'))}</div>`;
   return h + items.map(itemCard).join('');
 }
@@ -474,12 +483,97 @@ function viewHistory() {
     const st = stOf(r), files = r.repos.reduce((n, x) => n + x.files.length, 0), commits = r.repos.reduce((n, x) => n + x.commits.length, 0);
     h += `<div class="row${sel && sel.id === r.id ? ' sel' : ''}" data-run="${esc(r.id)}"><span class="dot ${esc(st)}"></span>
       <span class="meta" style="width:44px">${esc(new Date(r.started).toLocaleTimeString(locale(), {hour: '2-digit', minute: '2-digit'}))}</span>
-      <span class="grow">${r.spec.continues ? '↳ ' : ''}${esc(r.spec.title)}</span>
+      <span class="grow">${r.spec.continues ? '↳ ' : ''}${r.spec.chat ? `<span class="badge">${esc(t('chat.badge'))}</span> ` : ''}${esc(r.spec.title)}</span>
       ${commits ? `<span class="meta">${esc(tn('run.commitsN', commits))}</span>` : files ? `<span class="meta">${esc(tn('run.filesN', files))}</span>` : ''}
       <span class="meta">${esc(fmtDur((r.ended || Date.now()) - r.started))}</span>${statusBadge(st)}</div>`;
   }
   return h + '</div>';
 }
+
+/* ================= Chats ================= */
+/* Normal chats outside of the to-dos, like in the Claude desktop app: a question to Claude without a task around it.
+   A chat needs no folder (Claude then works in a folder of its own in the app's data folder) and goes on in the same
+   conversation; its answers stay in the chat instead of coming to "Needs you" (only approvals and problems do). */
+let newChatDraft = '';
+function viewChats() {
+  const c = cfg.chat, chats = data.runs.filter(r => r.spec.chat && !r.spec.continues).map(f => ({f, l: lastOf(f)})).sort((a, b) => b.l.started - a.l.started);
+  const lvSel = `<select class="composer-sel" data-chat-set="level" title="${esc(t('ed.level'))}">${LEVELS.map(l => `<option value="${l}"${c.level === l ? ' selected' : ''}>${esc(t('lv.' + l + '.short'))}</option>`).join('')}</select>`;
+  const mdSel = `<select class="composer-sel" data-chat-set="model" title="${esc(t('cl.model'))}">${['', 'opus', 'sonnet', 'haiku'].map(m => `<option value="${m}"${(c.model || '') === m ? ' selected' : ''}>${esc(m ? t('model.' + m) : t('model.default'))}</option>`).join('')}</select>`;
+  const dir = (c.dirs || [])[0];
+  let h = `<div class="view-title"><h1>${esc(t('v.chats'))}</h1><span class="sub">${esc(t('chat.sub'))}</span></div>`;
+  h += signInHint();
+  h += `<div class="chat-start"><h2>${esc(t('chat.hello'))}</h2>
+    <div class="composer"><textarea id="newChatIn" rows="1" data-new-chat data-grow placeholder="${esc(t('chat.ph'))}">${esc(newChatDraft)}</textarea>
+      <div class="composer-bar">
+        <span class="composer-chip${dir ? ' on' : ''}"><button data-chat-dir title="${esc(dir || t('chat.dirTip'))}">&#128193; ${esc(dir ? baseName(dir) : t('chat.noDir'))}</button>${dir ? `<button class="x" data-chat-dir-off title="${esc(t('chat.dirOff'))}">&#10005;</button>` : ''}</span>
+        ${lvSel}<span class="composer-chip${c.web ? ' on' : ''}"><button data-chat-web title="${esc(t('ed.web'))}">&#127760; ${esc(t('chat.web'))}</button></span>${mdSel}
+        <span class="flex"></span><button class="composer-btn" data-new-chat-go title="${esc(t('det.send'))} (Enter)"${newChatDraft.trim() ? '' : ' disabled'}>&uarr;</button></div></div>
+    <div class="composer-foot">${esc(t(dir ? 'chat.footDir' : 'chat.foot', {d: dir ? baseName(dir) : ''}))}</div></div>`;
+  if (!chats.length) return h + `<div class="empty-s">${esc(t('chat.empty'))}</div>`;
+  h += `<div class="group-h">${esc(t('chat.recent'))}</div><div class="pcard">`;
+  for (const {f, l} of chats) {
+    const st = stOf(l), n = chainOf(l).length;
+    h += `<div class="row${sel && sel.type === 'run' && chainOf(l).some(x => x.id === sel.id) ? ' sel' : ''}" data-chat-open="${esc(l.id)}"><span class="dot ${esc(st)}"></span>
+      <span class="grow" title="${esc(f.spec.said || f.spec.prompt)}">${esc(f.spec.title)}</span>
+      <span class="meta">${esc(tn('chat.msgs', n))}</span><span class="meta" style="min-width:110px;text-align:right">${esc(fmtWhen(l.started))}</span>
+      ${st === 'done' ? '' : statusBadge(st)}</div>`;
+  }
+  return h + '</div>';
+}
+async function startChat() {
+  const el = $('#newChatIn'), text = (el ? el.value : newChatDraft).trim();
+  if (!text) { el && el.focus(); return; }
+  const title = text.split('\n')[0].replace(/\s+/g, ' ').slice(0, 70);
+  const id = await startRun(specFrom({...cfg.chat, id: null, name: '', title}, {prompt: text, said: text, chat: true}), {show: false});
+  if (!id) return;
+  newChatDraft = '';
+  openFull(id);
+}
+/* A little Markdown for Claude's answers: code blocks, `code`, **bold**, headings. */
+function md(text) {
+  const inline = p => esc(p).replace(/^#{1,6} +(.+)$/gm, '<b class="md-h">$1</b>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  return String(text || '').split(/```[^\n]*\n?([\s\S]*?)```/).map((p, i) => i % 2 ? `<pre class="md-code">${esc(p.replace(/\n$/, ''))}</pre>` : inline(p)).join('');
+}
+/* A chat in full view: the conversation as messages, the chat box below. */
+function viewChat(r) {
+  const p = runParts(r), notes = data.inbox.filter(i => i.runId === r.id && i.kind !== 'done');
+  const changed = r.repos.some(x => x.files.length || x.commits.length);
+  const acts = `${p.st === 'running' ? `<button class="btn-sm" data-stop="${esc(r.id)}" style="color:var(--danger)">${esc(t('run.stop'))}</button>` : ''}
+    ${changed ? `<button class="btn-sm" data-diff="${esc(r.id)}">${esc(t('run.diff'))}</button>` : ''}`;
+  let h = '';
+  chainOf(r).forEach((x, i, all) => {
+    const prev = all[i - 1];
+    if (prev && !x.spec.resume && prev.sessionId) h += `<div class="msg-sep">${esc(t('chat.fresh'))}</div>`;
+    h += `<div class="msg me"><div class="bubble">${esc(x.spec.said || x.spec.prompt)}</div></div>`;
+    const st = stOf(x), meta = [fmtWhen(x.started), x.spec.model ? t('model.' + x.spec.model) : '', x.ended ? fmtDur(x.ended - x.started) : ''].filter(Boolean).join(' · ');
+    let a = '';
+    if (st === 'running') a = `<div class="log live" id="runLog"><div class="info ph">…</div></div><div class="thinking"><i></i>${esc(t('chat.thinking'))}</div>`;
+    else {
+      if (x.summary) a += `<div class="answer">${md(x.summary)}</div>`;
+      if (x.needs && !notes.length) a += `<div class="it-text" style="color:var(--warn)">${esc(x.needs.text)}</div>`;
+      if (x.error) a += `<div class="it-text" style="color:var(--danger)">${esc(x.error)}</div>`;
+      else if (!x.summary && !x.needs) a += `<div class="meta">${esc(t('st.' + st))}</div>`;
+      a += `<details class="steps" data-steps="${esc(x.id)}"${openSteps.has(x.id) ? ' open' : ''}><summary>${esc(t('chat.steps'))}</summary><div class="log"></div></details>`;
+    }
+    h += `<div class="msg claude"><div class="msg-meta">Claude · ${esc(meta)}${st !== 'running' && st !== 'done' ? ' · ' + statusBadge(st) : ''}</div>${a}</div>`;
+  });
+  return `<div class="full-run chat-run"><div class="view-title"><button class="btn-sm" data-full-close title="${esc(t('full.back'))} (Esc)">&larr; ${esc(t('full.back'))}</button>
+      <h1>${esc(firstOf(r).spec.title)}</h1><span class="meta">${esc(r.spec.dirs.map(baseName).join(', '))}</span><span class="flex"></span>${acts}</div>
+    <div class="chat-msgs">${h}${notes.map(i => itemCard(i, true)).join('')}</div>${composer(r, p.st)}</div>`;
+}
+/* The steps of an answer (its log), loaded when they are opened. */
+const openSteps = new Set(), stepsCache = {};
+async function fillSteps() {
+  for (const d of $$('details[data-steps][open]')) {
+    const id = d.dataset.steps, box = d.querySelector('.log');
+    if (!stepsCache[id]) stepsCache[id] = invoke ? await invoke('run_log', {id}).catch(() => []) : [];
+    if (box && d.isConnected) box.innerHTML = stepsCache[id].map(logLine).join('') || `<div class="info">${esc(t('det.noLog'))}</div>`;
+  }
+}
+$('#view').addEventListener('toggle', e => {
+  const d = e.target; if (!d.dataset || !d.dataset.steps) return;
+  if (d.open) { openSteps.add(d.dataset.steps); fillSteps(); } else openSteps.delete(d.dataset.steps);
+}, true);
 
 /* ================= Details panel ================= */
 let logFor = null;
@@ -535,10 +629,17 @@ function loadLog(r) {
 }
 /* A task in full view: the whole window instead of the panel (Alt+Enter, double-click, "Full view"). */
 let full = null;         // run id shown in full view
-function openFull(id) { if (!runOf(id)) return; full = id; sel = {type: 'run', id}; renderAll(); $('#view').scrollTop = 0; const c = $('#chatIn'); if (c) c.focus({preventScroll: true}); }
+function openFull(id) {
+  if (!runOf(id)) return;
+  if (isChat(runOf(id))) id = lastOf(runOf(id)).id;   // a chat opens at its newest message
+  full = id; sel = {type: 'run', id}; renderAll();
+  $('#view').scrollTop = isChat(runOf(id)) ? $('#view').scrollHeight : 0;
+  const c = $('#chatIn'); if (c) c.focus({preventScroll: true});
+}
 function closeFull() { full = null; renderAll(); }
 function showRun(id) { sel = {type: 'run', id}; if (full) full = id; renderAll(); }
 function viewFull(r) {
+  if (isChat(r)) return viewChat(r);
   const p = runParts(r), notes = data.inbox.filter(i => i.runId === r.id);
   return `<div class="full-run"><div class="view-title"><button class="btn-sm" data-full-close title="${esc(t('full.back'))} (Esc)">&larr; ${esc(t('full.back'))}</button>
       <h1>${esc(r.spec.title)}</h1>${statusBadge(p.st)}<span class="flex"></span>${p.actions}</div>
@@ -551,7 +652,7 @@ function viewFull(r) {
 function composer(r, st) {
   const running = st === 'running';
   return `<div class="composer-wrap"><div class="composer${running ? ' busy' : ''}">${modeChips(r.id)}
-      <textarea id="chatIn" rows="1" data-chat-in="${esc(r.id)}" data-grow placeholder="${esc(t(running ? 'full.chatBusy' : 'full.chatPh'))}">${esc(chatDraft[r.id] || '')}</textarea>
+      <textarea id="chatIn" rows="1" data-chat-in="${esc(r.id)}" data-grow placeholder="${esc(t(running ? 'full.chatBusy' : isChat(r) ? 'chat.replyPh' : 'full.chatPh'))}">${esc(chatDraft[r.id] || '')}</textarea>
       <div class="composer-bar"><span class="composer-tag" title="${esc(t('det.chatHint'))}">${esc(t('lv.' + r.spec.level))}${r.spec.auto ? ' · ' + esc(t('ed.autoShort')) : ''}${r.spec.model ? ' · ' + esc(t('model.' + r.spec.model)) : ''}</span><span class="flex"></span><button class="composer-slash" data-slash-open="${esc(r.id)}" title="${esc(t('sl.menu'))} (/)">/</button>
         ${running ? `<button class="composer-btn stop" data-stop="${esc(r.id)}" title="${esc(t('run.stop'))}"><i></i></button>`
           : `<button class="composer-btn" data-chat="${esc(r.id)}" title="${esc(t('det.send'))} (Enter)"${chatDraft[r.id] && chatDraft[r.id].trim() ? '' : ' disabled'}>&uarr;</button>`}</div></div>
@@ -676,6 +777,7 @@ async function sendChat(id) {
   }
   if (isRunning(id)) return toast(t('sl.busy'));
   if (text.startsWith('//')) prompt = text.slice(1);
+  opts.said = text.startsWith('//') ? text.slice(1) : text;
   try {
     const nid = await invoke('run_message', {id, text: prompt, opts});
     done(); delete chatMode[id];
@@ -815,11 +917,20 @@ async function showDiff(id) {
 
 /* ================= View clicks ================= */
 $('#view').addEventListener('click', async e => {
-  const b = e.target.closest('button,[data-run],[data-routine],[data-todo-profile],[data-reveal],a');
+  const b = e.target.closest('button,[data-run],[data-routine],[data-todo-profile],[data-reveal],[data-chat-open],a');
   if (!b) return;
   const d = b.dataset;
   if ((b.tagName === 'BUTTON' || b.tagName === 'A' || d.reveal) && await common(b, e)) return;
   if (d.fullClose !== undefined) return closeFull();
+  if (d.chatOpen) return openFull(d.chatOpen);
+  if (d.newChatGo !== undefined) return startChat();
+  if (d.chatWeb !== undefined) { cfg.chat.web = !cfg.chat.web; saveCfg(); return renderView(); }
+  if (d.chatDirOff !== undefined) { cfg.chat.dirs = []; saveCfg(); return renderView(); }
+  if (d.chatDir !== undefined) {
+    if (!invoke) return toast(t('ui.appOnly'));
+    const p = await invoke('pick_folder'); if (p) { cfg.chat.dirs = [p]; saveCfg(); renderView(); }
+    return;
+  }
   const note = id => { const el = $(`[data-note="${id}"]`); return el ? el.value : ''; };
   const answer = async (id, text, approve) => {
     try {
@@ -850,10 +961,14 @@ $('#view').addEventListener('click', async e => {
 $('#view').addEventListener('change', e => {
   const d = e.target.dataset;
   if (d.tick) { const f = cfg.todoFiles.find(x => x.path === d.tick); f.tick = e.target.checked; saveCfg(); }
+  if (d.chatSet) { cfg.chat[d.chatSet] = e.target.value; saveCfg(); renderView(); }
   if (d.addSect !== undefined) { const f = listOf(d.addSect); if (f) { f.addSection = e.target.value; saveCfg(); } }
   if (d.enable) { const r = routineOf(d.enable); r.enabled = e.target.checked; if (r.enabled) r.created = Math.max(r.created || 0, Date.now() - 1); saveCfg(); renderAll(); }
 });
-$('#view').addEventListener('input', e => { const p = e.target.dataset.addText; if (p !== undefined) addDraft[p] = e.target.value; });
+$('#view').addEventListener('input', e => {
+  const p = e.target.dataset.addText; if (p !== undefined) addDraft[p] = e.target.value;
+  if (e.target.dataset.newChat !== undefined) { newChatDraft = e.target.value; growChat(e.target); const b = $('[data-new-chat-go]'); if (b) b.disabled = !newChatDraft.trim(); }
+});
 $('#view').addEventListener('dblclick', e => {
   const b = e.target.closest('[data-run]');
   if (b && !e.target.closest('button,input,select,textarea,a')) openFull(b.dataset.run);
@@ -900,6 +1015,7 @@ document.addEventListener('keydown', e => {
   sendChat(id);
 }, true);
 $('#view').addEventListener('keydown', e => {
+  if (e.target.dataset && e.target.dataset.newChat !== undefined && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.stopPropagation(); return startChat(); }
   const p = e.target.dataset && e.target.dataset.addText;
   if (p && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); return addItem(p, e.metaKey || e.ctrlKey); }
   if (p && e.key === 'Escape' && e.target.value) { e.stopPropagation(); e.target.value = ''; delete addDraft[p]; return; }
@@ -993,6 +1109,11 @@ listen('login-done', e => { loginBusy = false; toast(e.payload ? t('cl.loginOk')
 /* ================= Menus, toolbars ================= */
 const A = {
   newTask, newRoutine, linkTodo, stopAll,
+  newChat: () => {
+    if (full) full = null;
+    if (settings.view !== 'chats') setView('chats'); else renderAll();
+    const el = $('#newChatIn'); if (el) { el.focus(); $('#view').scrollTop = 0; }
+  },
   openFull: () => { if (full) closeFull(); else if (sel && sel.type === 'run') openFull(sel.id); },
   newTodo: () => {
     if (!cfg.todoFiles.length) return linkTodo();
@@ -1002,7 +1123,7 @@ const A = {
   runSel: () => { if (sel && sel.type === 'routine') startRoutine(routineOf(sel.id)); else if (sel && sel.type === 'run' && runOf(sel.id)) startRun({...firstOf(runOf(sel.id)).spec, resume: null, continues: null, allowOnce: []}); },
   dismissDone: async () => { const ids = data.inbox.filter(i => i.kind === 'done' || i.kind === 'problem').map(i => i.id); if (ids.length) { await invoke('inbox_dismiss', {ids}); refresh(); } },
   clearHistory: async () => { if (await ask(t('a.clearHistory'), t('hist.clearAsk'), t('a.clearHistory'))) { await invoke('runs_clear'); sel = null; refresh(); } },
-  viewInbox: () => setView('inbox'), viewTodos: () => setView('todos'), viewRoutines: () => setView('routines'), viewHistory: () => setView('history'),
+  viewInbox: () => setView('inbox'), viewTodos: () => setView('todos'), viewRoutines: () => setView('routines'), viewHistory: () => setView('history'), viewChats: () => setView('chats'),
   togglePanels: () => { settings.dock = !settings.dock; applySettings(); },
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },
   settings: () => openSettings(), claudeSettings: () => openSettings('claude'), controlSettings: () => openSettings('control'),
@@ -1023,9 +1144,9 @@ const A = {
 };
 // Menu items: [action, shortcut, checked(), fixed]; '-' is a separator, '#key' a section label (as in every Studio app).
 const MENUS = [
-  ['agent', [['newTask', 'Ctrl+N'], ['newRoutine', 'Ctrl+Shift+N'], ['linkTodo', 'Ctrl+L'], ['newTodo', 'Ctrl+T'], '-', ['runSel', 'Ctrl+R'], ['stopAll', 'Ctrl+.'], '-', ['dismissDone'], ['clearHistory']]],
+  ['agent', [['newChat', 'Ctrl+K'], ['newTask', 'Ctrl+N'], ['newRoutine', 'Ctrl+Shift+N'], ['linkTodo', 'Ctrl+L'], ['newTodo', 'Ctrl+T'], '-', ['runSel', 'Ctrl+R'], ['stopAll', 'Ctrl+.'], '-', ['dismissDone'], ['clearHistory']]],
   ['view', [['viewInbox', 'Alt+1', () => settings.view === 'inbox'], ['viewTodos', 'Alt+2', () => settings.view === 'todos'], ['viewRoutines', 'Alt+3', () => settings.view === 'routines'],
-    ['viewHistory', 'Alt+4', () => settings.view === 'history'], '-', ['openFull', 'Alt+Enter', () => !!full], ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
+    ['viewHistory', 'Alt+4', () => settings.view === 'history'], ['viewChats', 'Alt+5', () => settings.view === 'chats'], '-', ['openFull', 'Alt+Enter', () => !!full], ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
   ['settings', [['settings', 'Ctrl+,'], ['claudeSettings'], ['controlSettings'], '-', '#menu.language',
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
     '-', '#menu.theme',
@@ -1080,6 +1201,8 @@ const ICONS = {
   todos: SV('<path d="m4 7 2 2 4-4M4 17l2 2 4-4M13 7h8M13 17h8"/>'),
   routines: SV('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5M12 7v5l3 2"/>'),
   history: SV('<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>'),
+  chats: SV('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/>'),
+  chat: SV('<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/><path d="M12 8.5v7M8.5 12h7"/>'),
   task: SV('<path d="M12 5v14M5 12h14"/>'),
   routine: SV('<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M12 12v5M9.5 14.5h5"/>'),
   link: SV('<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'),
@@ -1095,7 +1218,7 @@ function makeBtn(act, html, cls = '') {
 }
 function buildToolbars() {
   const fill = (id, list) => { const box = $(id); box.innerHTML = ''; list.forEach(([a, i]) => box.append(makeBtn(a, i))); };
-  fill('#fileBtns', [['newTask', ICONS.task], ['newRoutine', ICONS.routine], ['linkTodo', ICONS.link], ['runSel', ICONS.play]]);
+  fill('#fileBtns', [['newChat', ICONS.chat], ['newTask', ICONS.task], ['newRoutine', ICONS.routine], ['linkTodo', ICONS.link], ['runSel', ICONS.play]]);
   fill('#viewBtns', [['togglePanels', ICONS.panel], ['settings', ICONS.gear], ['shortcuts', ICONS.help]]);
   const stop = Object.assign(document.createElement('button'), {className: 'stop-btn', id: 'stopAll', textContent: t('ui.stopAll'), title: tip('stopAll')});
   stop.dataset.act = 'stopAll';
@@ -1256,7 +1379,7 @@ window.addEventListener('keydown', e => {
 {
   const item = act => ({id: act, label: t('a.' + act), accel: keyOf(act) || null, enabled: allowed(act)});
   Native.setProvider(e => {
-    if (e.target.closest('#view') && !e.target.closest('input,textarea')) return [item('newTask'), item('newRoutine'), item('linkTodo'), null, item('stopAll')];
+    if (e.target.closest('#view') && !e.target.closest('input,textarea')) return [item('newChat'), item('newTask'), item('newRoutine'), item('linkTodo'), null, item('stopAll')];
     return null;
   });
   Native.setHandler(id => run(id));
@@ -1284,6 +1407,7 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
     const c = text ? JSON.parse(text) : null;
     cfg = {...newCfg(), ...(c || {})};
     cfg.todo = {...newCfg().todo, ...(cfg.todo || {})};
+    cfg.chat = {...newCfg().chat, ...(cfg.chat || {})};
     if (invoke) invoke('config_save', {content: JSON.stringify(cfg, null, 1), claude: cfg.claude || ''}).catch(() => {});
   } catch (e) { cfg = newCfg(); toast(t('toast.loadFail', {e})); }
   await Promise.all(cfg.todoFiles.map(f => loadTodo(f.path)));
@@ -1297,7 +1421,11 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
     listen('run-log', e => {
       const {id, line} = e.payload;
       const r = runOf(id); if (r && (line.kind === 'tool' || line.kind === 'text')) r.last = line.text.slice(0, 200);
-      if (logFor === id) { const el = $('#runLog'); if (el) { el.querySelectorAll('.ph').forEach(x => x.remove()); el.insertAdjacentHTML('beforeend', logLine(line)); scrollLog(); } }
+      if (logFor === id) {
+        const el = $('#runLog'), v = $('#view'), atEnd = v.scrollHeight - v.scrollTop - v.clientHeight < 120;
+        if (el) { el.querySelectorAll('.ph').forEach(x => x.remove()); el.insertAdjacentHTML('beforeend', logLine(line)); scrollLog(); }
+        if (el && full && atEnd && isChat(runOf(full))) v.scrollTop = v.scrollHeight;
+      }
       if (settings.view === 'inbox' && !typing()) { const c = $(`[data-run="${CSS.escape(id)}"] .it-text`); if (c && r) c.textContent = r.last; }
     });
   }

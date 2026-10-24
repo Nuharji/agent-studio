@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.0 — 2026-10-24
+- Normal chats outside of the to-dos, like in the Claude desktop app: the new view **Chats** (Alt+5, Agent → New chat,
+  Ctrl+K) starts with a big box "How can I help?" — Enter sends, Shift+Enter makes a new line.
+  - No folder needed: without one Claude works in a folder of its own in the app's data folder; or pick a folder in the
+    box. Rights (read by default), internet (on by default) and the model are chosen right in the box and remembered.
+  - The chat opens as a conversation: your messages as bubbles, Claude's answers with a little Markdown (code blocks,
+    `code`, **bold**), "Claude is thinking …" with the live steps while it works, and "Steps" to look at them later.
+    The chat box below goes on in the same conversation; slash commands work there too (`/clear` starts anew).
+  - A chat's answers stay in the chat — they don't come to "Needs you" as "done" notes; approvals and problems still do.
+  - Recent chats are listed under the box (newest first, with the number of messages); a click opens a chat at its
+    newest message. Chats are marked in the history.
+- Claude is told it is in a normal conversation (asks back in its answer, no summary at the end).
+
 ## 0.6.0 — 2026-10-24
 - Slash commands like in the Claude desktop app: type `/` in a run's chat box (full view and panel) or press the `/`
   button — a list of commands opens; ↑/↓ choose, Tab or Enter take one, Esc closes it.

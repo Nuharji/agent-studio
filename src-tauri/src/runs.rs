@@ -121,7 +121,13 @@ pub fn read_log(app: &AppHandle, id: &str) -> Vec<LogLine> {
 }
 
 /// Starts a run in the background; returns its id.
-pub fn start(app: &AppHandle, spec: Spec) -> Result<String, String> {
+pub fn start(app: &AppHandle, mut spec: Spec) -> Result<String, String> {
+    // A chat without a folder works in a folder of its own in the app's data folder.
+    if spec.chat && spec.dirs.is_empty() {
+        let d = dir(app).join("chats");
+        let _ = std::fs::create_dir_all(&d);
+        spec.dirs = vec![d.to_string_lossy().into_owned()];
+    }
     let first = spec.dirs.first().ok_or_else(|| if spec.lang == "de" { "Kein Ordner gewählt".to_string() } else { "No folder chosen".to_string() })?;
     if !Path::new(first).is_dir() { return Err(format!("{first}: {}", if spec.lang == "de" { "Ordner nicht gefunden" } else { "folder not found" })); }
     if spec.prompt.trim().is_empty() { return Err(if spec.lang == "de" { "Kein Auftrag".into() } else { "No task".into() }); }
@@ -263,6 +269,8 @@ fn inbox_item(r: &Run) -> Option<Item> {
             let text = if !n.text.is_empty() { n.text } else if de { "Claude möchte etwas tun, das dieser Lauf nicht darf:".into() } else { "Claude wants to do something this run may not:".into() };
             Some(Item { kind: kind.into(), text, options: n.options, rules: r.denials.iter().map(|d| d.rule.clone()).collect(), denials: r.denials.clone(), ..base })
         }
+        // A chat's answer is read in the chat itself.
+        "done" if r.spec.chat => None,
         "done" => Some(Item { kind: "done".into(), text: r.summary.clone(), ..base }),
         "failed" | "timeout" => Some(Item { kind: "problem".into(), text: if r.error.is_empty() { r.summary.clone() } else { r.error.clone() }, ..base }),
         _ => None,
@@ -308,6 +316,8 @@ pub struct MsgOpts {
     pub model: Option<String>,
     /// Only plan this one step (/plan); the next message works normally again.
     pub plan: bool,
+    /// What the person wrote (shown in the chat when the prompt is more, e.g. an expanded command).
+    pub said: Option<String>,
 }
 
 /// Goes on with a run: an answer, an approval or a further message. The same Claude Code session when there is one.
@@ -329,6 +339,7 @@ pub fn next_spec(r: &Run, prompt: String, allow: Vec<String>, o: MsgOpts) -> Spe
     if spec.plan_once { spec.plan_only = false; spec.plan_once = false; }
     if o.plan && !spec.plan_only { spec.plan_only = true; spec.plan_once = true; }
     if let Some(m) = o.model { spec.model = m.trim().to_string(); }
+    spec.said = o.said.unwrap_or_else(|| prompt.clone());
     if o.fresh {
         spec.resume = None;
         spec.allow_once.clear();
@@ -398,6 +409,11 @@ mod tests {
         r.status = "done".into();
         r.summary = "Alles gut".into();
         assert_eq!(inbox_item(&r).unwrap().kind, "done");
+        // A chat's answer stays in the chat; what it needs still comes to the box.
+        r.spec.chat = true;
+        assert!(inbox_item(&r).is_none());
+        r.status = "failed".into();
+        assert_eq!(inbox_item(&r).unwrap().kind, "problem");
     }
 
     #[test]
@@ -405,7 +421,9 @@ mod tests {
         let r = Run { id: "r1".into(), session_id: "s1".into(), spec: Spec { prompt: "Erst".into(), model: "opus".into(), allow_once: vec!["Write".into()], ..Default::default() }, ..Default::default() };
         let s = next_spec(&r, "Weiter".into(), vec![], MsgOpts::default());
         assert_eq!((s.resume.as_deref(), s.prompt.as_str(), s.model.as_str(), s.continues.as_deref()), (Some("s1"), "Weiter", "opus", Some("r1")));
-        let s = next_spec(&r, "Neu".into(), vec![], MsgOpts { fresh: true, model: Some("haiku".into()), plan: false });
+        assert_eq!(s.said, "Weiter");
+        let s = next_spec(&r, "Neu".into(), vec![], MsgOpts { fresh: true, model: Some("haiku".into()), plan: false, said: Some("/clear Neu".into()) });
+        assert_eq!(s.said, "/clear Neu");
         assert_eq!((s.resume, s.prompt.as_str(), s.model.as_str()), (None, "Neu", "haiku"));
         assert!(s.allow_once.is_empty(), "/clear forgets approvals of the old conversation");
         // /plan only for one step.

@@ -408,6 +408,36 @@ body{grid-template-columns:minmax(0,1fr)}
 .mode-chip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;padding:2px 4px 2px 9px;border-radius:10px;background:var(--accent);color:var(--on-accent)}
 .mode-chip button{border:0;background:none;color:inherit;cursor:pointer;font-size:10px;padding:0 3px;opacity:.8}
 .mode-chip button:hover{opacity:1}
+/* Chats: the start box and the conversation as messages */
+.chat-start{max-width:820px;margin:26px auto 22px}
+.chat-start h2{text-align:center;font-size:22px;font-weight:500;color:var(--strong);margin:0 0 16px}
+.chat-start .composer textarea{min-height:48px}
+.composer-chip{display:inline-flex;align-items:center;border:1px solid var(--card-border);border-radius:10px;font-size:11.5px;color:var(--dim);max-width:220px}
+.composer-chip button{border:0;background:none;color:inherit;font:inherit;padding:3px 9px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.composer-chip button.x{padding:3px 7px 3px 0;font-size:10px}
+.composer-chip:hover{color:var(--text);background:var(--hover)}
+.composer-chip.on{color:var(--text);border-color:var(--accent)}
+.composer-sel{font:inherit;font-size:11.5px;color:var(--dim);background:none;border:1px solid var(--card-border);border-radius:10px;padding:2px 6px;outline:0;cursor:pointer}
+.composer-sel:hover{color:var(--text);background:var(--hover)}
+.chat-msgs{max-width:820px;width:100%;margin:6px auto 14px;display:flex;flex-direction:column;gap:12px}
+.msg.me{display:flex;justify-content:flex-end}
+.msg .bubble{max-width:78%;background:var(--card-bg);border:1px solid var(--card-border);border-radius:16px 16px 4px 16px;padding:8px 13px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13.5px;line-height:1.5;user-select:text}
+.msg.claude{padding:0 2px}
+.msg-meta{font-size:11px;color:var(--dim);margin-bottom:4px}
+.answer{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13.5px;line-height:1.6;color:var(--text);user-select:text}
+.answer code{font:12px Consolas,Menlo,monospace;background:var(--code-bg);border:1px solid var(--card-border);border-radius:4px;padding:0 4px}
+.answer .md-code{font:12px/1.5 Consolas,Menlo,monospace;background:var(--code-bg);border:1px solid var(--card-border);border-radius:6px;padding:8px 10px;margin:6px 0;white-space:pre;overflow-x:auto}
+.answer .md-h{display:inline-block;font-size:14px;color:var(--strong);margin-top:4px}
+.msg-sep{align-self:center;font-size:11px;color:var(--dim);border-top:1px solid var(--border);padding-top:4px;width:60%;text-align:center}
+.steps{margin-top:4px;font-size:11.5px;color:var(--dim)}
+.steps summary{cursor:pointer;width:max-content}
+.steps .log{margin-top:4px;max-height:300px}
+.chat-run .log{min-height:0}
+.chat-run .log.live{max-height:none;font-size:12px}
+.chat-run .pcard{max-width:820px}
+.thinking{display:flex;align-items:center;gap:7px;margin-top:6px;font-size:12px;color:var(--dim)}
+.thinking i{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:think 1.2s ease-in-out infinite}
+@keyframes think{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
 @media (max-width:860px){.full-grid{grid-template-columns:minmax(0,1fr)}.full-side{position:static;max-height:none}}
 .st-run::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px}
 .st-run.busy::before{background:var(--accent);animation:pulse 1.2s infinite}

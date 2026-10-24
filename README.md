@@ -11,7 +11,11 @@ Unlike the other Studio apps it needs the internet and a Claude account: the wor
 [Claude Code](https://claude.com/claude-code) (the `claude` program) with **your own sign-in**. Agent Studio stores no
 API key and no password; routines, logs and history stay on your computer.
 
-## Features (0.2.0)
+## Features (0.7.0)
+- **Chats** like in the Claude desktop app, outside of to-dos and routines: ask Claude anything in the big box of the
+  Chats view (Ctrl+K) — no folder needed (or pick one), rights, internet and model right in the box. The chat is a
+  conversation with bubbles and answers in a little Markdown, the steps on request, and goes on in the same session;
+  its answers stay in the chat instead of "Needs you".
 - **Needs you:** one box for everything Claude needs from you — questions (with answer buttons or your own text),
   approvals (exactly what was refused, e.g. `git push origin main`; approve or refuse, with a note), "done" notes with a
   summary, and problems. A number on the app icon and in the window title, and a notification of the system. Your answer
@@ -50,7 +54,7 @@ API key and no password; routines, logs and history stay on your computer.
   the Claude desktop app) or set by hand.
 - 4 app themes, settings dialog, customizable shortcuts, auto-hide bars, German/English (Claude answers in the app's language).
 
-Setup: `config.json`, runs and the box: `state.json`, one log per run: `runs/<id>.jsonl` — in the app's data folder
+Setup: `config.json`, runs and the box: `state.json`, one log per run: `runs/<id>.jsonl`, chats without a folder work in `chats/` — in the app's data folder
 (Windows: `%APPDATA%\com.agentstudio.app`, macOS: `~/Library/Application Support/com.agentstudio.app`).
 
 ## How a run works

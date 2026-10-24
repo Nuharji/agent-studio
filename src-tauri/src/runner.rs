@@ -48,6 +48,10 @@ pub struct Spec {
     pub allow_once: Vec<String>,
     /// The run this one continues.
     pub continues: Option<String>,
+    /// A normal chat (not a to-do or a routine): Claude answers in the conversation; the folder is optional.
+    pub chat: bool,
+    /// What the person wrote for this step (shown in the chat; `prompt` may hold more, e.g. an expanded command).
+    pub said: String,
 }
 
 const LEVELS: [&str; 4] = ["read", "edit", "commit", "publish"];
@@ -116,6 +120,7 @@ pub fn system_prompt(s: &Spec) -> String {
     } else {
         format!("\nThis run is for an item of the to-do list {} (line {}): \"{}\". Don't tick it yourself — Agent Studio does.", t.path, t.line + 1, t.text)
     }).unwrap_or_default();
+    if s.chat { return chat_prompt(s, de, &rules); }
     if de {
         format!("Du arbeitest in Agent Studio für die Person, die dich eingerichtet hat — ohne Fenster: Während des Laufs kann dir niemand antworten.
 Deine Rechte in diesem Lauf: {}. Was darüber hinausgeht, wird automatisch abgelehnt und der Person zur Freigabe vorgelegt — versuche dann nicht, es zu umgehen.
@@ -138,6 +143,31 @@ When you need something from the person (a question, a decision, or approval for
 (options may be left out; for an approval use \"needs\": \"approval\" and say in \"text\" what you want to do.) The answer comes as the next message.
 Always end with a short summary: what you did, what changed, what is still open.{}",
             level_text(s, false), if rules.is_empty() { String::new() } else { format!("The person's rules:\n{rules}\n") }, todo)
+    }
+}
+
+/// A normal chat: Claude answers the person directly; it only asks with the block for what it may not do.
+fn chat_prompt(s: &Spec, de: bool, rules: &str) -> String {
+    if de {
+        format!("Du chattest in Agent Studio mit der Person, die dich eingerichtet hat — ein normales Gespräch wie in der Claude-App: Sie liest deine Antwort und antwortet direkt darauf. Stell Rückfragen also einfach in deiner Antwort.
+Deine Rechte in diesem Chat: {}. Was darüber hinausgeht, wird automatisch abgelehnt — versuche dann nicht, es zu umgehen.
+{}
+Brauchst du eine Freigabe für etwas, das du nicht darfst, schreibe am Ende deiner Antwort genau einen Block:
+```agent-studio
+{{\"needs\": \"approval\", \"text\": \"was du tun willst\"}}
+```
+Antworte auf Deutsch, so ausführlich wie nötig und so kurz wie möglich; eine Zusammenfassung am Ende brauchst du nicht.",
+            level_text(s, true), if rules.is_empty() { String::new() } else { format!("Regeln der Person:\n{rules}\n") })
+    } else {
+        format!("You are chatting in Agent Studio with the person who set you up — a normal conversation like in the Claude app: they read your answer and reply to it directly. So just ask follow-up questions in your answer.
+Your rights in this chat: {}. Anything beyond is refused automatically — don't try to work around it then.
+{}
+When you need approval for something you may not do, end your answer with exactly one block:
+```agent-studio
+{{\"needs\": \"approval\", \"text\": \"what you want to do\"}}
+```
+Answer as fully as needed and as briefly as possible; no summary at the end is needed.",
+            level_text(s, false), if rules.is_empty() { String::new() } else { format!("The person's rules:\n{rules}\n") })
     }
 }
 
@@ -478,6 +508,19 @@ mod tests {
         assert_eq!(args(&s)[5], "auto");
         s.plan_only = true;
         assert_eq!(args(&s)[5], "plan");
+    }
+
+    #[test]
+    fn a_chat_is_told_it_is_a_conversation() {
+        let mut s = spec("read");
+        s.chat = true;
+        s.web = true;
+        s.rules = vec!["Duze mich".into()];
+        let p = system_prompt(&s);
+        assert!(p.contains("normales Gespräch") && p.contains("Internet erlaubt") && p.contains("Duze mich") && p.contains("\"needs\": \"approval\""));
+        assert!(!p.contains("Zusammenfassung auf Deutsch: was du getan hast"), "no summary for a chat");
+        s.lang = "en".into();
+        assert!(system_prompt(&s).contains("normal conversation"));
     }
 
     #[test]
