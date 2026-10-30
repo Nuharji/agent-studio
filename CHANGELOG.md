@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.11.0 — 2026-10-30
+- New: Layouts, next to the themes (Settings → Appearance; shared by all Studio apps, any layout goes with any theme). **Adobe** is the look so far; **Modern** has rounded, floating panels and more room; **Custom** is yours: panels and tool rail left or right, density, corners, floating panels, status bar.
+
 ## 0.10.1 — 2026-10-30
 - ChatGPT: a failed run now shows Codex's own message instead of its log lines; "Reconnecting…" and other notes on the way
   no longer show as errors in the log. Checked against the real Codex CLI 0.166.0 (not signed in).
