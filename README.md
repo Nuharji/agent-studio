@@ -11,7 +11,7 @@ Unlike the other Studio apps it needs the internet and a Claude account: the wor
 [Claude Code](https://claude.com/claude-code) (the `claude` program) with **your own sign-in**. Agent Studio stores no
 API key and no password; routines, logs and history stay on your computer.
 
-## Features (0.8.0)
+## Features (0.8.1)
 - **Linked with the other Studio apps:** Markdown, PDF, Data, Slides and Plan Studio have **"Send to Agent Studio"**
   (Ctrl+Shift+A) — a file or a selection with a task (proofread, summarize, quiz, explain the data, slides from an
   outline …). It runs here as a chat marked with the app's name; the answer and the files Claude made go back to the

@@ -128,7 +128,9 @@ select:focus,input:focus{border-color:var(--accent)}
 
 /* Buttons and fields */
 .field-in{background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:var(--radius);height:26px;padding:0 8px;font:inherit;outline:0;width:200px}
-.btn-sm{height:26px;padding:0 12px;border-radius:var(--btn-radius);border:1px solid var(--input-border);background:none}
+.btn-sm{height:26px;padding:0 12px;border-radius:var(--btn-radius);border:1px solid var(--input-border);background:none;
+  display:inline-flex;align-items:center;justify-content:center;gap:5px;white-space:nowrap}
+.btn-sm .ico{font-size:13px;line-height:1}
 .btn-sm:hover{background:var(--hover)}
 .btn-sm.primary{background:var(--cta);border-color:var(--cta);color:var(--on-accent);font-weight:600}
 .btn-sm.primary:hover{background:var(--cta-hover)}
@@ -279,7 +281,8 @@ body{grid-template-columns:minmax(0,1fr)}
 .pcard.done{border-left:4px solid var(--ok)}
 .pcard.running{border-left:4px solid var(--accent)}
 .it-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.it-head b{color:var(--strong);font-size:13px}
+.it-head b{color:var(--strong);font-size:13px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.it-head .btn-sm,.it-head .badge{flex:none}
 .it-head .meta,.meta{color:var(--dim);font-size:11.5px}
 .it-text{white-space:pre-wrap;line-height:1.55;color:var(--text);max-height:260px;overflow:auto;user-select:text}
 .it-text.short{max-height:96px}

@@ -388,7 +388,7 @@ function viewInbox() {
 function itemCard(it, inFull) {
   const r = runOf(it.runId), when = fmtWhen(it.created);
   const head = `<div class="it-head"><b>${esc(t('kind.' + it.kind))}</b><span class="meta">${esc(it.title || '')} · ${esc(when)}</span><span class="flex"></span>
-    ${r && !inFull ? `<button class="btn-sm" data-open-run="${esc(r.id)}">${esc(t('inbox.open'))}</button><button class="btn-sm" data-full="${esc(r.id)}" title="${esc(tip('openFull'))}">&#10530;</button>` : ''}</div>`;
+    ${r && !inFull ? `<button class="btn-sm" data-open-run="${esc(r.id)}">${esc(t('inbox.open'))}</button><button class="btn-sm" data-full="${esc(r.id)}" title="${esc(tip('openFull'))}"><span class="ico">&#10530;</span></button>` : ''}</div>`;
   const text = `<div class="it-text${it.kind === 'done' ? ' short' : ''}">${esc(it.text)}</div>`;
   let body = '';
   if (it.kind === 'approval') {
@@ -658,8 +658,8 @@ function runParts(r) {
 const chatDraft = {};    // run id → message being typed (survives redraws)
 function runDetails(box, r) {
   const p = runParts(r);
-  box.innerHTML = `<div class="it-head"><b>${esc(r.spec.title)}</b>${statusBadge(p.st)}<span class="flex"></span>
-    <button class="btn-sm" data-full="${esc(r.id)}" title="${esc(tip('openFull'))}">&#10530; ${esc(t('full.open'))}</button></div>
+  box.innerHTML = `<div class="it-head"><b title="${esc(r.spec.title)}">${esc(r.spec.title)}</b>${statusBadge(p.st)}<span class="flex"></span>
+    <button class="btn-sm" data-full="${esc(r.id)}" title="${esc(tip('openFull'))}"><span class="ico">&#10530;</span>${esc(t('full.open'))}</button></div>
     ${p.info}<div class="d-actions">${p.actions}</div>${p.result}${p.needs}${p.changes}${p.log}${p.chat}`;
   loadLog(r);
 }

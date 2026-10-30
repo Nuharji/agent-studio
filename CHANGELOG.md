@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1 — 2026-10-30
+- The "Full view" button fits again: in the narrow details panel its text no longer wraps out of the button. A long
+  task title is shortened with "…" instead (the whole title shows on hover); the ⤢ sign sits centered next to the text.
+
 ## 0.8.0 — 2026-10-24
 - Strongly linked with the other Studio apps. Markdown, PDF, Data, Slides and Plan Studio get "Send to Agent Studio": a
   file or a selection with a task (e.g. proofread, summarize, make a quiz, explain the data, slides from an outline).
