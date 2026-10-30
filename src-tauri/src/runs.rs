@@ -242,7 +242,8 @@ fn finish(app: &AppHandle, id: &str, result: Option<runner::Ev>, err: String, ex
             r.needs = needs;
             r.denials = denials;
             r.cost = cost;
-            if error { r.error = if err.is_empty() { r.summary.clone() } else { err.clone() }; }
+            // Codex's stderr holds log lines; its message says what went wrong.
+            if error { r.error = if err.is_empty() || chatgpt { r.summary.clone() } else { err.clone() }; }
             r.status = if timeout { "timeout" } else if stopped { "stopped" } else if error { "failed" } else if r.needs.is_some() || !r.denials.is_empty() { "needsYou" } else { "done" }.into();
         }
         _ => {

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1 — 2026-10-30
+- ChatGPT: a failed run now shows Codex's own message instead of its log lines; "Reconnecting…" and other notes on the way
+  no longer show as errors in the log. Checked against the real Codex CLI 0.166.0 (not signed in).
+
 ## 0.10.0 — 2026-10-30
 - ChatGPT as the other AI: pick a ChatGPT model wherever you pick a model (a chat, a routine, a task, `/model chatgpt`, or
   as the standard). The work is done by OpenAI's Codex CLI with your ChatGPT account; Settings → ChatGPT finds it and signs in.

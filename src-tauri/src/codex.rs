@@ -67,7 +67,7 @@ impl Reader {
             // Also comes for what Codex retries by itself, so it only counts when no result follows.
             Some("error") => {
                 self.error = msg(j.get("message"));
-                vec![Ev::Log("error", runner::short(&self.error, 300))]
+                vec![Ev::Log(if self.error.starts_with("Reconnecting") { "info" } else { "error" }, runner::short(&self.error, 300))]
             }
             _ => vec![],
         }
@@ -91,7 +91,8 @@ impl Reader {
                 Ev::Log("tool", format!("{what}: {}", c.get("path").and_then(Value::as_str).unwrap_or("")))
             }).collect(),
             "web_search" if !s("query").is_empty() => vec![Ev::Log("tool", format!("WebSearch: {}", runner::short(s("query"), 160)))],
-            "error" => vec![Ev::Log("error", runner::short(s("message"), 300))],
+            // Notes on the way (e.g. falling back to another transport); what ends a run comes as turn.failed.
+            "error" => vec![Ev::Log("info", runner::short(s("message"), 300))],
             _ => vec![],
         }
     }
@@ -200,6 +201,16 @@ mod tests {
         assert_eq!(r.end(), None, "it went on after the retry");
         let mut r = Reader::default();
         assert_eq!(r.line(r#"{"type":"turn.failed","error":{"message":"Kaputt"}}"#), vec![Ev::Result { text: "Kaputt".into(), error: true, cost: 0.0, denials: vec![] }]);
+    }
+
+    #[test]
+    fn reads_a_run_without_sign_in() {
+        // As Codex 0.166.0 really wrote it.
+        let mut r = Reader::default();
+        assert!(matches!(&r.line(r#"{"type":"error","message":"Reconnecting... 2/5 (unexpected status 401 Unauthorized: Missing bearer)"}"#)[0], Ev::Log("info", _)));
+        assert!(matches!(&r.line(r#"{"type":"item.completed","item":{"id":"item_1","type":"error","message":"Falling back from WebSockets to HTTPS transport."}}"#)[0], Ev::Log("info", _)));
+        let Ev::Result { text, error, .. } = &r.line(r#"{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized: Missing bearer"}}"#)[0] else { panic!() };
+        assert!(*error && text.contains("401"));
     }
 
     #[test]

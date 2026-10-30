@@ -11,7 +11,7 @@ Unlike the other Studio apps it needs the internet and a Claude account: the wor
 [Claude Code](https://claude.com/claude-code) (the `claude` program) with **your own sign-in**. Agent Studio stores no
 API key and no password; routines, logs and history stay on your computer.
 
-## Features (0.10.0)
+## Features (0.10.1)
 - **ChatGPT as the other AI:** a ChatGPT model can be picked wherever a model is picked (or `/model chatgpt`). The work is
   done by OpenAI's [Codex CLI](https://github.com/openai/codex) (`codex exec --json`) with your ChatGPT account; Settings → ChatGPT
   finds it and signs in. Rights come from Codex's sandbox with your own Codex config and rules ignored: read-only, or
