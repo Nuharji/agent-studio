@@ -420,5 +420,21 @@
  "link.accept": "Aufträge aus anderen Studio-Apps annehmen",
  "link.web": "Sie dürfen ins Internet (wenn die App es möchte)",
  "link.level": "Höchstens",
- "link.levelEdit": "Dateien im Ordner der Datei ändern"
+ "link.levelEdit": "Dateien im Ordner der Datei ändern",
+ "model.chatgpt": "ChatGPT (empfohlenes Modell)",
+ "model.gpt-6.1-sol": "ChatGPT · 6.1 Sol",
+ "model.gpt-6.1-terra": "ChatGPT · 6.1 Terra",
+ "model.gpt-6-luna": "ChatGPT · 6 Luna",
+ "model.gpt-6-astra": "ChatGPT · Astra",
+ "set.chatgpt": "ChatGPT",
+ "gpt.program": "ChatGPT als andere KI",
+ "gpt.hint": "Wähle überall, wo du ein Modell wählst, ein ChatGPT-Modell — für einen Chat, eine Routine, einen Auftrag oder hier als Standard. Die Arbeit macht OpenAIs Codex-CLI (das Programm codex) mit deinem ChatGPT-Konto. Agent Studio sieht und speichert kein Passwort.",
+ "gpt.notFound": "Codex nicht gefunden",
+ "gpt.notFoundHint": "Installiere es (z. B. npm install -g @openai/codex oder brew install codex) oder wähle das Programm hier.",
+ "gpt.signIn": "Nicht bei ChatGPT angemeldet",
+ "gpt.signInHint": "Melde dich einmal mit deinem ChatGPT-Konto an — dein Browser öffnet sich.",
+ "gpt.ok": "Angemeldet: {how}",
+ "gpt.privacy": "Was ChatGPT in einem Lauf liest, geht zur Bearbeitung an OpenAI.",
+ "gpt.rights": "Bei ChatGPT setzt die Sandbox von Codex die Grenzen: Es darf höchstens Dateien in den Ordnern ändern und kann auch anderswo Dateien lesen. Commits und Pushes bleiben bei dir, auch bei höheren Rechten. Regeln pro Befehl kennt sie nicht: „Nichts löschen“ und die erlaubten Befehle werden dem Modell nur gesagt, nicht erzwungen.",
+ "sl.noCompact": "Bei ChatGPT gibt es hier kein /compact."
 }

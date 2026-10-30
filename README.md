@@ -11,7 +11,12 @@ Unlike the other Studio apps it needs the internet and a Claude account: the wor
 [Claude Code](https://claude.com/claude-code) (the `claude` program) with **your own sign-in**. Agent Studio stores no
 API key and no password; routines, logs and history stay on your computer.
 
-## Features (0.9.0)
+## Features (0.10.0)
+- **ChatGPT as the other AI:** a ChatGPT model can be picked wherever a model is picked (or `/model chatgpt`). The work is
+  done by OpenAI's [Codex CLI](https://github.com/openai/codex) (`codex exec --json`) with your ChatGPT account; Settings → ChatGPT
+  finds it and signs in. Rights come from Codex's sandbox with your own Codex config and rules ignored: read-only, or
+  changing files in the folders at most (it can read elsewhere too). Commits and pushes stay with you; "never delete" and
+  allowed commands are only told to the model, not enforced — use Claude where you need those guarantees.
 - **Linked with the other Studio apps:** Markdown, PDF, Data, Slides and Plan Studio have **"Send to Agent Studio"**
   (Ctrl+Shift+A) — a file or a selection with a task (proofread, summarize, quiz, explain the data, slides from an
   outline …). It runs here as a chat marked with the app's name; the answer and the files Claude made go back to the

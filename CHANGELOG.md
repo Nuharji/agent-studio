@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.0 — 2026-10-30
+- ChatGPT as the other AI: pick a ChatGPT model wherever you pick a model (a chat, a routine, a task, `/model chatgpt`, or
+  as the standard). The work is done by OpenAI's Codex CLI with your ChatGPT account; Settings → ChatGPT finds it and signs in.
+- Its rights come from Codex's sandbox: read-only, or changing files in the folders at most (it can read elsewhere too).
+  Commits and pushes stay with you, even at higher rights; "never delete" and allowed commands are only told to the model.
+- Changing the AI in a conversation brings the last step along as text.
+
 ## 0.9.0 — 2026-10-30
 - To-do lists stay short: each list shows only its last 10 ticked items (last in the file), a button under the list shows
   the older ones and hides them again. Open items always show; a section with nothing to show disappears.

@@ -420,5 +420,21 @@
  "link.accept": "Take tasks from other Studio apps",
  "link.web": "They may use the internet (when the app asks for it)",
  "link.level": "At most",
- "link.levelEdit": "Change files in the file's folder"
+ "link.levelEdit": "Change files in the file's folder",
+ "model.chatgpt": "ChatGPT (recommended model)",
+ "model.gpt-6.1-sol": "ChatGPT · 6.1 Sol",
+ "model.gpt-6.1-terra": "ChatGPT · 6.1 Terra",
+ "model.gpt-6-luna": "ChatGPT · 6 Luna",
+ "model.gpt-6-astra": "ChatGPT · Astra",
+ "set.chatgpt": "ChatGPT",
+ "gpt.program": "ChatGPT as the other AI",
+ "gpt.hint": "Choose a ChatGPT model wherever you pick a model — for a chat, a routine, a task, or here as the standard. The work is done by OpenAI's Codex CLI (the codex program) with your ChatGPT account. Agent Studio sees and stores no password.",
+ "gpt.notFound": "Codex not found",
+ "gpt.notFoundHint": "Install it (e.g. npm install -g @openai/codex or brew install codex) or choose the program here.",
+ "gpt.signIn": "Not signed in to ChatGPT",
+ "gpt.signInHint": "Sign in once with your ChatGPT account — your browser opens.",
+ "gpt.ok": "Signed in: {how}",
+ "gpt.privacy": "What ChatGPT reads in a run goes to OpenAI for processing.",
+ "gpt.rights": "With ChatGPT, Codex's sandbox sets the limits: it may change files in the folders at most and can read files elsewhere too. Commits and pushes stay with you, even at higher rights. It doesn't know rules per command: \"never delete\" and the allowed commands are only told to the model, not enforced.",
+ "sl.noCompact": "ChatGPT runs have no /compact here."
 }

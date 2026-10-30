@@ -1,6 +1,7 @@
 //! The runs (history with logs) and the "Needs you" box. Kept in the app's data folder: state.json (runs and the
 //! box) and runs/<id>.jsonl (the log of each run). One run = one `claude` process (runner.rs).
 
+use crate::codex;
 use crate::runner::{self, Denial, LogLine, Needs, Repo, Spec};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -59,6 +60,7 @@ pub struct Agent {
     pids: Mutex<HashMap<String, u32>>,
     stopping: Mutex<HashSet<String>>,
     pub claude: Mutex<String>,
+    pub codex: Mutex<String>,
     pub login: Mutex<Option<std::process::ChildStdin>>,
 }
 
@@ -132,9 +134,15 @@ pub fn start(app: &AppHandle, mut spec: Spec) -> Result<String, String> {
     let first = spec.dirs.first().ok_or_else(|| if spec.lang == "de" { "Kein Ordner gewählt".to_string() } else { "No folder chosen".to_string() })?;
     if !Path::new(first).is_dir() { return Err(format!("{first}: {}", if spec.lang == "de" { "Ordner nicht gefunden" } else { "folder not found" })); }
     if spec.prompt.trim().is_empty() { return Err(if spec.lang == "de" { "Kein Auftrag".into() } else { "No task".into() }); }
-    let own = app.state::<Agent>().claude.lock().unwrap().clone();
-    let exe = runner::find_claude(Some(&own)).or_else(|| runner::find_claude(None))
-        .ok_or_else(|| if spec.lang == "de" { "Claude Code nicht gefunden — in den Einstellungen festlegen".to_string() } else { "Claude Code not found — set it in Settings".to_string() })?;
+    let exe = if codex::is_codex(&spec.model) {
+        let own = app.state::<Agent>().codex.lock().unwrap().clone();
+        codex::find(Some(&own)).or_else(|| codex::find(None))
+            .ok_or_else(|| if spec.lang == "de" { "Codex (für ChatGPT) nicht gefunden — in den Einstellungen festlegen".to_string() } else { "Codex (for ChatGPT) not found — set it in Settings".to_string() })?
+    } else {
+        let own = app.state::<Agent>().claude.lock().unwrap().clone();
+        runner::find_claude(Some(&own)).or_else(|| runner::find_claude(None))
+            .ok_or_else(|| if spec.lang == "de" { "Claude Code nicht gefunden — in den Einstellungen festlegen".to_string() } else { "Claude Code not found — set it in Settings".to_string() })?
+    };
     let id = new_id();
     let run = Run { id: id.clone(), repos: runner::snapshot(&spec.dirs), spec, started: now(), status: "running".into(), ..Default::default() };
     {
@@ -158,7 +166,8 @@ fn execute(app: AppHandle, run: Run, exe: PathBuf) {
     let de = spec.lang == "de";
     log(&app, &id, "info", format!("{} {}", if de { "Start in" } else { "Starting in" }, spec.dirs.join(", ")));
     let mut cmd = runner::command(&exe);
-    cmd.args(runner::args(&spec)).current_dir(&spec.dirs[0])
+    let is_codex = codex::is_codex(&spec.model);
+    cmd.args(if is_codex { codex::args(&spec) } else { runner::args(&spec) }).current_dir(&spec.dirs[0])
         .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     runner::clean_env(&mut cmd);
     #[cfg(unix)]
@@ -192,9 +201,10 @@ fn execute(app: AppHandle, run: Run, exe: PathBuf) {
         });
     }
     let mut result = None;
+    let mut reader = codex::Reader::default();
     if let Some(out) = child.stdout.take() {
         for line in BufReader::new(out).lines().map_while(Result::ok) {
-            for ev in runner::parse_line(&line) {
+            for ev in if is_codex { reader.line(&line) } else { runner::parse_line(&line) } {
                 match ev {
                     runner::Ev::Session(s) => update(&app, &id, |r| r.session_id = s),
                     runner::Ev::Log(k, t) => log(&app, &id, k, t),
@@ -203,6 +213,7 @@ fn execute(app: AppHandle, run: Run, exe: PathBuf) {
             }
         }
     }
+    if result.is_none() { result = reader.end(); }
     let status = child.wait();
     done.store(true, std::sync::atomic::Ordering::Relaxed);
     app.state::<Agent>().pids.lock().unwrap().remove(&id);
@@ -223,6 +234,7 @@ fn finish(app: &AppHandle, id: &str, result: Option<runner::Ev>, err: String, ex
     r.ended = now();
     runner::after(&mut r.repos);
     let de = r.spec.lang == "de";
+    let chatgpt = codex::is_codex(&r.spec.model);
     match result {
         Some(runner::Ev::Result { text, error, cost, denials }) => {
             let (summary, needs) = runner::needs(&text);
@@ -235,11 +247,16 @@ fn finish(app: &AppHandle, id: &str, result: Option<runner::Ev>, err: String, ex
         }
         _ => {
             r.status = if timeout { "timeout" } else if stopped { "stopped" } else { "failed" }.into();
-            r.error = if !err.is_empty() { err.clone() } else if exit_ok { String::new() } else if de { "Claude Code hat ohne Ergebnis aufgehört".into() } else { "Claude Code stopped without a result".into() };
+            r.error = if !err.is_empty() { err.clone() } else if exit_ok { String::new() } else if chatgpt { if de { "Codex hat ohne Ergebnis aufgehört".into() } else { "Codex stopped without a result".into() } } else if de { "Claude Code hat ohne Ergebnis aufgehört".into() } else { "Claude Code stopped without a result".into() };
         }
     }
     // "Not logged in" comes back as an answer, not as an error.
-    if r.summary.contains("Not logged in") || r.summary.contains("/login") || r.error.contains("Not logged in") {
+    if chatgpt {
+        if r.status == "failed" && ["Not logged in", "401", "codex login"].iter().any(|x| r.error.contains(x) || r.summary.contains(x)) {
+            r.error = if de { "Nicht bei ChatGPT angemeldet — in den Einstellungen anmelden".into() } else { "Not signed in to ChatGPT — sign in in Settings".into() };
+            r.summary.clear();
+        }
+    } else if r.summary.contains("Not logged in") || r.summary.contains("/login") || r.error.contains("Not logged in") {
         r.status = "failed".into();
         r.error = if de { "Nicht bei Claude angemeldet — in den Einstellungen anmelden".into() } else { "Not signed in to Claude — sign in in Settings".into() };
         r.summary.clear();
@@ -269,7 +286,7 @@ fn inbox_item(r: &Run) -> Option<Item> {
         "needsYou" => {
             let n = r.needs.clone().unwrap_or_default();
             let kind = if !r.denials.is_empty() { "approval" } else if n.kind == "approval" { "approval" } else { "question" };
-            let text = if !n.text.is_empty() { n.text } else if de { "Claude möchte etwas tun, das dieser Lauf nicht darf:".into() } else { "Claude wants to do something this run may not:".into() };
+            let text = if !n.text.is_empty() { n.text } else if de { "Die KI möchte etwas tun, das dieser Lauf nicht darf:".into() } else { "The AI wants to do something this run may not:".into() };
             Some(Item { kind: kind.into(), text, options: n.options, rules: r.denials.iter().map(|d| d.rule.clone()).collect(), denials: r.denials.clone(), ..base })
         }
         // A chat's answer is read in the chat itself.
@@ -347,6 +364,11 @@ pub fn next_spec(r: &Run, prompt: String, allow: Vec<String>, o: MsgOpts) -> Spe
         spec.resume = None;
         spec.allow_once.clear();
         spec.prompt = prompt;
+    } else if codex::is_codex(&spec.model) != codex::is_codex(&r.spec.model) {
+        // The other AI can't go on in this one's session: it gets the last step as text.
+        spec.resume = None;
+        spec.allow_once.clear();
+        spec.prompt = format!("{}\n\n{}\n\n{}", r.spec.prompt, r.summary, prompt);
     } else if r.session_id.is_empty() {
         spec.resume = None;
         spec.prompt = format!("{}\n\n{}", r.spec.prompt, prompt);
@@ -440,5 +462,10 @@ mod tests {
         let s = next_spec(&p, "x".into(), vec![], MsgOpts { plan: true, ..Default::default() });
         assert!(s.plan_only && !s.plan_once);
         assert!(next_spec(&p, "x".into(), vec![], MsgOpts::default()).plan_only);
+        // To the other AI: no session of the old one, the last step comes along as text.
+        let done = Run { summary: "Antwort".into(), ..r.clone() };
+        let s = next_spec(&done, "Weiter".into(), vec![], MsgOpts { model: Some("chatgpt".into()), ..Default::default() });
+        assert_eq!((s.resume, s.prompt.as_str()), (None, "Erst\n\nAntwort\n\nWeiter"));
+        assert!(s.allow_once.is_empty());
     }
 }

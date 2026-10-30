@@ -1,6 +1,6 @@
 [package]
 name = "agent-studio"
-version = "0.9.0"
+version = "0.10.0"
 description = "Claude as your assistant: routines, a to-do list and approvals, under your control"
 edition = "2021"
 rust-version = "1.77"

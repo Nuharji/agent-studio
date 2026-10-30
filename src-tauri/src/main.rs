@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod agentlink;
+mod codex;
 mod link;
 mod runner;
 mod runs;
@@ -31,8 +32,9 @@ fn config_load(app: AppHandle) -> Option<String> {
 }
 
 #[tauri::command]
-fn config_save(app: AppHandle, content: String, claude: String) -> Result<(), String> {
+fn config_save(app: AppHandle, content: String, claude: String, codex: Option<String>) -> Result<(), String> {
     *app.state::<runs::Agent>().claude.lock().unwrap() = claude;
+    *app.state::<runs::Agent>().codex.lock().unwrap() = codex.unwrap_or_default();
     let p = runs::dir(&app).join("config.json");
     let tmp = p.with_extension("json.tmp");
     fs::write(&tmp, content).map_err(|e| e.to_string())?;
@@ -64,13 +66,46 @@ async fn claude_status(own: String) -> ClaudeInfo {
     ClaudeInfo { path: Some(p.to_string_lossy().into_owned()), version, status }
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexInfo {
+    path: Option<String>,
+    version: String,
+    logged_in: bool,
+    how: String,
+}
+
+/// Where Codex (for ChatGPT) is, its version and whether someone is signed in (`codex login status`).
+#[tauri::command]
+async fn codex_status(own: String) -> CodexInfo {
+    let Some(p) = codex::find(Some(&own)).or_else(|| if own.trim().is_empty() { codex::find(None) } else { None }) else {
+        return CodexInfo { path: None, version: String::new(), logged_in: false, how: String::new() };
+    };
+    let version = runner::command(&p).arg("--version").output().ok().map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
+    let (logged_in, how) = runner::command(&p).args(["login", "status"]).output().ok()
+        .map(|o| codex::status_of(o.status.success(), &format!("{}\n{}", String::from_utf8_lossy(&o.stderr), String::from_utf8_lossy(&o.stdout))))
+        .unwrap_or_default();
+    CodexInfo { path: Some(p.to_string_lossy().into_owned()), version, logged_in, how }
+}
+
+/// Signs in to ChatGPT (`codex login`: opens the browser), shown like the sign-in to Claude.
+#[tauri::command]
+fn codex_login(app: AppHandle, own: String) -> Result<(), String> {
+    let p = codex::find(Some(&own)).or_else(|| codex::find(None)).ok_or("Codex not found")?;
+    sign_in(app, &p, &["login"])
+}
+
 /// Signs in to Claude (`claude auth login`: opens the browser). Its output reaches the UI as "login-output" lines,
 /// the end as "login-done"; a code asked for is typed in with `login_input`.
 #[tauri::command]
 fn login_start(app: AppHandle, own: String) -> Result<(), String> {
     let p = runner::find_claude(Some(&own)).or_else(|| runner::find_claude(None)).ok_or("Claude Code not found")?;
-    let mut c = runner::command(&p);
-    c.args(["auth", "login"]).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
+    sign_in(app, &p, &["auth", "login"])
+}
+
+fn sign_in(app: AppHandle, program: &Path, args: &[&str]) -> Result<(), String> {
+    let mut c = runner::command(program);
+    c.args(args).stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     runner::clean_env(&mut c);
     let mut child = c.spawn().map_err(|e| e.to_string())?;
     *app.state::<runs::Agent>().login.lock().unwrap() = child.stdin.take();
@@ -379,6 +414,8 @@ fn main() {
             config_load,
             config_save,
             claude_status,
+            codex_status,
+            codex_login,
             login_start,
             login_input,
             run_start,

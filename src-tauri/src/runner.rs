@@ -105,11 +105,28 @@ fn level_text(s: &Spec, de: bool) -> String {
     } else {
         ["read only (look at files, git status/log/diff)", "change files in the folders", "change files and commit", "change, commit and push / publish"][lv]
     };
+    if crate::codex::is_codex(&s.model) { return codex_level_text(s, de); }
     let mut t = what.to_string();
     if lv >= 1 && !s.commands.is_empty() { t += &format!("{}{}", if de { "; erlaubte Befehle: " } else { "; allowed commands: " }, s.commands.join(", ")); }
     if s.web { t += if de { "; Internet erlaubt" } else { "; internet allowed" }; }
     if s.no_delete { t += if de { "; nichts löschen" } else { "; never delete" }; }
     if s.auto && !s.plan_only { t += if de { ". Auto-Modus: Innerhalb dieser Rechte arbeitest du selbstständig, ohne für jeden Schritt zu fragen; riskante Schritte prüft Claude Code und lehnt sie ab" } else { ". Auto mode: within these rights you work on your own without asking for each step; Claude Code checks risky steps and refuses them" }; }
+    t
+}
+
+/// The rights of a ChatGPT run, as Codex's sandbox holds them (see codex.rs): there is no approval that widens it.
+fn codex_level_text(s: &Spec, de: bool) -> String {
+    let write = level_no(&s.level) >= 1 && !s.plan_only;
+    let mut t = match (write, de) {
+        (true, true) => "Dateien in den Ordnern ändern. Git-Commits, Pushes und Schreiben außerhalb der Ordner sperrt die Sandbox — dafür hilft auch keine Freigabe: Bitte nicht darum, sondern nenne die nötigen Befehle in deiner Antwort",
+        (true, false) => "change files in the folders. The sandbox blocks git commits, pushes and writing outside the folders — no approval helps there: don't ask for it, name the commands needed in your answer instead",
+        (false, true) => "nur lesen; die Sandbox sperrt jedes Ändern",
+        (false, false) => "read only; the sandbox blocks every change",
+    }.to_string();
+    if s.plan_only { t += if de { "; sag nur, was du tun würdest" } else { "; only say what you would do" }; }
+    if s.web { t += if de { "; Internet erlaubt" } else { "; internet allowed" }; }
+    if s.no_delete { t += if de { "; lösche nichts" } else { "; never delete anything" }; }
+    if write && !s.commands.is_empty() { t += &format!("{}{}", if de { "; führe nur diese Befehle aus: " } else { "; only run these commands: " }, s.commands.join(", ")); }
     t
 }
 
@@ -122,7 +139,10 @@ pub fn system_prompt(s: &Spec) -> String {
     } else {
         format!("\nThis run is for an item of the to-do list {} (line {}): \"{}\". Don't tick it yourself — Agent Studio does.", t.path, t.line + 1, t.text)
     }).unwrap_or_default();
-    if s.chat { return chat_prompt(s, de, &rules); }
+    if s.chat {
+        let p = chat_prompt(s, de, &rules);
+        return if crate::codex::is_codex(&s.model) { p.replace("Claude-App", "ChatGPT-App").replace("Claude app", "ChatGPT app") } else { p };
+    }
     if de {
         format!("Du arbeitest in Agent Studio für die Person, die dich eingerichtet hat — ohne Fenster: Während des Laufs kann dir niemand antworten.
 Deine Rechte in diesem Lauf: {}. Was darüber hinausgeht, wird automatisch abgelehnt und der Person zur Freigabe vorgelegt — versuche dann nicht, es zu umgehen.
@@ -211,7 +231,7 @@ pub enum Ev {
     Result { text: String, error: bool, cost: f64, denials: Vec<Denial> },
 }
 
-fn short(s: &str, n: usize) -> String {
+pub fn short(s: &str, n: usize) -> String {
     let one = s.split_whitespace().collect::<Vec<_>>().join(" ");
     if one.chars().count() <= n { one } else { one.chars().take(n).collect::<String>() + "…" }
 }
@@ -317,11 +337,24 @@ pub fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     c
 }
 
+pub fn home() -> PathBuf { std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from).unwrap_or_default() }
+
+/// What `where` / the login shell finds for a program.
+pub fn on_path(name: &str) -> Option<PathBuf> {
+    let found = if cfg!(windows) {
+        command("where").arg(name).output().ok()
+    } else {
+        let sh = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+        command(sh).args(["-lc", &format!("command -v {name}")]).output().ok()
+    }?;
+    String::from_utf8_lossy(&found.stdout).lines().map(str::trim).map(PathBuf::from).find(|p| p.is_file())
+}
+
 /// Where `claude` is: the path set in the settings, else the usual places (installer, npm, Homebrew, the Claude
 /// desktop app's own copy), else what the login shell finds.
 pub fn find_claude(own: Option<&str>) -> Option<PathBuf> {
     if let Some(p) = own.map(str::trim).filter(|p| !p.is_empty()) { return Some(PathBuf::from(p)).filter(|p| p.is_file()); }
-    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from).unwrap_or_default();
+    let home = home();
     let mut c: Vec<PathBuf> = Vec::new();
     if cfg!(windows) {
         c.push(home.join(".local").join("bin").join("claude.exe"));
@@ -333,13 +366,7 @@ pub fn find_claude(own: Option<&str>) -> Option<PathBuf> {
     if let Some(p) = c.into_iter().find(|p| p.is_file()) { return Some(p); }
     #[cfg(target_os = "macos")]
     if let Some(p) = desktop_copy(&home.join("Library/Application Support/Claude/claude-code")) { return Some(p); }
-    let found = if cfg!(windows) {
-        command("where").arg("claude").output().ok()
-    } else {
-        let sh = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
-        command(sh).args(["-lc", "command -v claude"]).output().ok()
-    }?;
-    String::from_utf8_lossy(&found.stdout).lines().map(str::trim).map(PathBuf::from).find(|p| p.is_file())
+    on_path("claude")
 }
 
 /// The newest copy of Claude Code that the Claude desktop app keeps (<dir>/<version>/<id>/claude.app/…/claude).

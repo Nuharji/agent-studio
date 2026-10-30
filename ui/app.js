@@ -56,11 +56,14 @@ const THEMES = ['dark', 'light', 'github', 'github-dark'];
 const LEVELS = ['read', 'edit', 'commit', 'publish'];
 const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, view: 'inbox', histFilter: 'all'};
 let settings = {...DEF}, booted = false;
+/* The model decides which AI does a run: Claude (Claude Code) or ChatGPT (OpenAI's Codex CLI, see codex.rs). */
+const MODEL_OPTS = ['', 'opus', 'sonnet', 'haiku', 'chatgpt', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna', 'gpt-6-astra'];
+const isCodex = m => m === 'chatgpt' || String(m || '').startsWith('gpt-');
 const newCfg = () => ({version: 1, routines: [], todoFiles: [],
   todo: {dirs: [], level: 'edit', commands: '', web: false, noDelete: true, maxMinutes: 30, prompt: ''},
   chat: {dirs: [], level: 'read', web: true, auto: false, noDelete: true, maxMinutes: 30, model: ''},
   link: {accept: true, level: 'edit', web: true},
-  rules: '', dailyMinutes: 0, claude: '', model: '', ticked: [], doneNotes: true});
+  rules: '', dailyMinutes: 0, claude: '', codex: '', model: '', ticked: [], doneNotes: true});
 let cfg = newCfg();
 let data = {runs: [], inbox: [], running: []};
 let sel = null;          // {type: 'run' | 'routine' | 'todo' | 'list', id}
@@ -73,7 +76,7 @@ let cfgT = 0;
 function saveCfg() {
   clearTimeout(cfgT);
   cfgT = setTimeout(() => {
-    if (invoke) invoke('config_save', {content: JSON.stringify(cfg, null, 1), claude: cfg.claude || ''}).catch(e => toast(t('toast.saveFail', {e})));
+    if (invoke) invoke('config_save', {content: JSON.stringify(cfg, null, 1), claude: cfg.claude || '', codex: cfg.codex || ''}).catch(e => toast(t('toast.saveFail', {e})));
     else saveSettings();
   }, 300);
 }
@@ -367,7 +370,14 @@ function emptyBig(title, text, btns = '') {
   return `<div class="empty-big"><div class="big-tile">Ag</div><h2>${esc(title)}</h2><p>${esc(text)}</p>${btns ? `<div class="it-actions">${btns}</div>` : ''}</div>`;
 }
 function signInHint() {
-  if (!invoke || !claude.checked) return '';
+  if (!invoke) return '';
+  if (isCodex(cfg.model)) {
+    if (!codexInfo.checked || (codexInfo.path && codexInfo.loggedIn)) return '';
+    const [head, text] = codexInfo.path ? ['gpt.signIn', 'gpt.signInHint'] : ['gpt.notFound', 'gpt.notFoundHint'];
+    return `<div class="pcard ${codexInfo.path ? 'approval' : 'problem'}"><div class="it-head"><b>${esc(t(head))}</b></div><div class="it-text">${esc(t(text))}</div>
+    <div class="it-actions"><button class="btn-sm primary" data-go="chatgpt">${esc(t('cl.open'))}</button></div></div>`;
+  }
+  if (!claude.checked) return '';
   if (!claude.path) return `<div class="pcard problem"><div class="it-head"><b>${esc(t('cl.notFound'))}</b></div><div class="it-text">${esc(t('cl.notFoundHint'))}</div>
     <div class="it-actions"><button class="btn-sm primary" data-go="claude">${esc(t('cl.open'))}</button></div></div>`;
   if (claude.status && claude.status.loggedIn === false) return `<div class="pcard approval"><div class="it-head"><b>${esc(t('cl.signIn'))}</b></div><div class="it-text">${esc(t('cl.signInHint'))}</div>
@@ -510,7 +520,7 @@ let newChatDraft = '';
 function viewChats() {
   const c = cfg.chat, chats = data.runs.filter(r => r.spec.chat && !r.spec.continues).map(f => ({f, l: lastOf(f)})).sort((a, b) => b.l.started - a.l.started);
   const lvSel = `<select class="composer-sel" data-chat-set="level" title="${esc(t('ed.level'))}">${LEVELS.map(l => `<option value="${l}"${c.level === l ? ' selected' : ''}>${esc(t('lv.' + l + '.short'))}</option>`).join('')}</select>`;
-  const mdSel = `<select class="composer-sel" data-chat-set="model" title="${esc(t('cl.model'))}">${['', 'opus', 'sonnet', 'haiku'].map(m => `<option value="${m}"${(c.model || '') === m ? ' selected' : ''}>${esc(m ? t('model.' + m) : t('model.default'))}</option>`).join('')}</select>`;
+  const mdSel = `<select class="composer-sel" data-chat-set="model" title="${esc(t('cl.model'))}">${MODEL_OPTS.map(m => `<option value="${m}"${(c.model || '') === m ? ' selected' : ''}>${esc(m ? t('model.' + m) : t('model.default'))}</option>`).join('')}</select>`;
   const dir = (c.dirs || [])[0];
   let h = `<div class="view-title"><h1>${esc(t('v.chats'))}</h1><span class="sub">${esc(t('chat.sub'))}</span></div>`;
   h += signInHint();
@@ -520,7 +530,7 @@ function viewChats() {
         <span class="composer-chip${dir ? ' on' : ''}"><button data-chat-dir title="${esc(dir || t('chat.dirTip'))}">&#128193; ${esc(dir ? baseName(dir) : t('chat.noDir'))}</button>${dir ? `<button class="x" data-chat-dir-off title="${esc(t('chat.dirOff'))}">&#10005;</button>` : ''}</span>
         ${lvSel}<span class="composer-chip${c.web ? ' on' : ''}"><button data-chat-web title="${esc(t('ed.web'))}">&#127760; ${esc(t('chat.web'))}</button></span>${mdSel}
         <span class="flex"></span><button class="composer-btn" data-new-chat-go title="${esc(t('det.send'))} (Enter)"${newChatDraft.trim() ? '' : ' disabled'}>&uarr;</button></div></div>
-    <div class="composer-foot">${esc(t(dir ? 'chat.footDir' : 'chat.foot', {d: dir ? baseName(dir) : ''}))}</div></div>`;
+    <div class="composer-foot">${esc(t(dir ? 'chat.footDir' : 'chat.foot', {d: dir ? baseName(dir) : ''}))}${isCodex(c.model || cfg.model) ? '<br>' + esc(t('gpt.rights')) : ''}</div></div>`;
   if (!chats.length) return h + `<div class="empty-s">${esc(t('chat.empty'))}</div>`;
   h += `<div class="group-h">${esc(t('chat.recent'))}</div><div class="pcard">`;
   for (const {f, l} of chats) {
@@ -606,7 +616,7 @@ function viewChat(r) {
       else if (!x.summary && !x.needs) a += `<div class="meta">${esc(t('st.' + st))}</div>`;
       a += `<details class="steps" data-steps="${esc(x.id)}"${openSteps.has(x.id) ? ' open' : ''}><summary>${esc(t('chat.steps'))}</summary><div class="log"></div></details>`;
     }
-    h += `<div class="msg claude"><div class="msg-meta">Claude · ${esc(meta)}${st !== 'running' && st !== 'done' ? ' · ' + statusBadge(st) : ''}</div>${a}</div>`;
+    h += `<div class="msg claude"><div class="msg-meta">${isCodex(x.spec.model) ? 'ChatGPT' : 'Claude'} · ${esc(meta)}${st !== 'running' && st !== 'done' ? ' · ' + statusBadge(st) : ''}</div>${a}</div>`;
   });
   return `<div class="full-run chat-run"><div class="view-title"><button class="btn-sm" data-full-close title="${esc(t('full.back'))} (Esc)">&larr; ${esc(t('full.back'))}</button>
       <h1>${esc(firstOf(r).spec.title)}</h1><span class="meta">${esc(r.spec.dirs.map(baseName).join(', '))}</span><span class="flex"></span>${acts}</div>
@@ -726,7 +736,7 @@ const BUILTIN = [
   {name: 'full'},
   {name: 'help'},
 ];
-const MODELS = ['default', 'opus', 'sonnet', 'haiku'];
+const MODELS = ['default', ...MODEL_OPTS.slice(1)];
 const chatMode = {};     // run id → {fresh, model, plan}: what the next message changes (/clear, /model, /plan)
 const slashCache = {};   // folders → {at, list}
 async function ownCommands(r) {
@@ -813,6 +823,7 @@ async function sendChat(id) {
         return set('model', want === 'default' ? '' : want, t('sl.modelSet', {m: modelName(want === 'default' ? '' : want)}));
       }
       case 'compact':
+        if (isCodex(r.spec.model)) return toast(t('sl.noCompact'));
         if (!r.sessionId) return toast(t('sl.noSession'));
         prompt = '/compact' + (args ? ' ' + args : ''); opts = {fresh: false, model: null, plan: false}; break;
       case 'cost': done(); return toast(t('sl.costIs', {c: '$' + chainCost(r).toFixed(2)}));
@@ -852,8 +863,8 @@ function rightsFields(o, key) {
     <label class="switch"><input type="checkbox" data-sw="${key}|noDelete"${o.noDelete !== false ? ' checked' : ''}><span></span>${esc(t('ed.noDelete'))}</label>
     <label class="switch"><input type="checkbox" data-sw="${key}|planOnly"${o.planOnly ? ' checked' : ''}><span></span>${esc(t('ed.planOnly'))}</label>
     <div class="ed-field"><label>${esc(t('ed.limit'))}</label><div class="two"><input type="number" min="0" max="600" step="5" data-f="${key}|maxMinutes" value="${esc(o.maxMinutes || 0)}">
-      <select data-f="${key}|model">${['', 'opus', 'sonnet', 'haiku'].map(m => `<option value="${m}"${(o.model || '') === m ? ' selected' : ''}>${esc(m ? t('model.' + m) : t('model.default'))}</option>`).join('')}</select></div>
-      <div class="hint">${esc(t('ed.limitHint'))}</div></div>`;
+      <select data-f="${key}|model">${MODEL_OPTS.map(m => `<option value="${m}"${(o.model || '') === m ? ' selected' : ''}>${esc(m ? t('model.' + m) : t('model.default'))}</option>`).join('')}</select></div>
+      <div class="hint">${esc(t('ed.limitHint'))}</div></div>${isCodex(o.model || cfg.model) ? `<div class="hint">${esc(t('gpt.rights'))}</div>` : ''}`;
 }
 function routineEditor(box, r) {
   const s = r.schedule || (r.schedule = {kind: 'manual', time: '07:00', day: 0});
@@ -996,6 +1007,7 @@ $('#view').addEventListener('click', async e => {
   if (d.answer) { const v = note(d.answer).trim(); if (!v) { const el = $(`[data-note="${d.answer}"]`); el && el.focus(); return; } return answer(d.answer, v); }
   if (d.dismiss) { await invoke('inbox_dismiss', {ids: [d.dismiss]}); return refresh(); }
   if (d.go === 'claude') return openSettings('claude');
+  if (d.go === 'chatgpt') return openSettings('chatgpt');
   if (d.go === 'login') { openSettings('claude'); return login(); }
   if (d.hist) { settings.histFilter = d.hist; saveSettings(); return renderView(); }
   if (d.stopRoutine) { const r = data.runs.find(x => x.spec.routineId === d.stopRoutine && isRunning(x.id)); if (r) stopRun(r.id); return; }
@@ -1145,18 +1157,24 @@ async function checkClaude() {
   claude = {...await invoke('claude_status', {own: cfg.claude || ''}).catch(() => ({path: null, version: '', status: null})), checked: true};
   if (booted) { updateStatus(); if (settings.view === 'inbox') renderView(); if (settingsOpen) renderSettings(); }
 }
+let codexInfo = {path: null, version: '', loggedIn: false, how: '', checked: false};
+async function checkCodex() {
+  if (!invoke) return;
+  codexInfo = {...await invoke('codex_status', {own: cfg.codex || ''}).catch(() => ({path: null, version: '', loggedIn: false, how: ''})), checked: true};
+  if (booted) { if (settings.view === 'inbox' || settings.view === 'chats') renderView(); if (settingsOpen) renderSettings(); }
+}
 let loginOut = '', loginBusy = false;
-async function login() {
+async function login(cmd = 'login_start', own = cfg.claude) {
   if (!invoke) return;
   loginOut = ''; loginBusy = true; if (settingsOpen) renderSettings();
-  try { await invoke('login_start', {own: cfg.claude || ''}); } catch (e) { loginBusy = false; loginOut = String(e); if (settingsOpen) renderSettings(); }
+  try { await invoke(cmd, {own: own || ''}); } catch (e) { loginBusy = false; loginOut = String(e); if (settingsOpen) renderSettings(); }
 }
 listen('login-output', e => {
   loginOut += e.payload + '\n';
   const el = $('#loginOut'); if (el) { el.textContent = loginOut; el.scrollTop = el.scrollHeight; } else if (settingsOpen) renderSettings();
   // The sign-in page — opened by Claude Code itself; the link stays here in case no browser opened.
 });
-listen('login-done', e => { loginBusy = false; toast(e.payload ? t('cl.loginOk') : t('cl.loginFail')); checkClaude(); if (settingsOpen) renderSettings(); });
+listen('login-done', e => { loginBusy = false; toast(e.payload ? t('cl.loginOk') : t('cl.loginFail')); checkClaude(); checkCodex(); if (settingsOpen) renderSettings(); });
 
 /* ================= Menus, toolbars ================= */
 const A = {
@@ -1309,6 +1327,7 @@ function openSettings(section) {
   $('.modal').classList.add('wide');
   settingsOpen = true; renderSettings();
   if (section === 'claude' || !claude.checked) checkClaude();
+  if (section === 'chatgpt' || !codexInfo.checked) checkCodex();
 }
 function renderSettings() {
   const opt = (v, label, c) => `<option value="${v}"${String(v) === String(c) ? ' selected' : ''}>${esc(label)}</option>`;
@@ -1334,7 +1353,17 @@ function renderSettings() {
       ${loginOut || loginBusy ? `<div class="login-out" id="loginOut">${esc(loginOut || '…')}</div>
         ${loginBusy ? `<div class="ed-field" style="max-width:560px;margin-top:8px"><label>${esc(t('cl.code'))}</label><div style="display:flex;gap:6px"><input class="field-in" id="loginCode" style="flex:1" autocomplete="off"><button class="btn-sm" data-cl="code">${esc(t('cl.sendCode'))}</button></div></div>` : ''}` : ''}
       <p class="hint">${esc(t('cl.privacy'))}</p>
-      <h3>${esc(t('cl.model'))}</h3><select class="wide-sel" data-set="model">${['', 'opus', 'sonnet', 'haiku'].map(m => opt(m, m ? t('model.' + m) : t('model.default'), cfg.model || '')).join('')}</select>`}`,
+      <h3>${esc(t('cl.model'))}</h3><select class="wide-sel" data-set="model">${MODEL_OPTS.map(m => opt(m, m ? t('model.' + m) : t('model.default'), cfg.model || '')).join('')}</select>`}`,
+    chatgpt: `<h3>${esc(t('gpt.program'))}</h3><p class="hint">${esc(t('gpt.hint'))}</p>
+      ${!invoke ? `<p class="hint">${esc(t('ui.appOnly'))}</p>` : `
+      <p>${codexInfo.checked ? (codexInfo.path ? `<b>${esc(t('cl.found'))}</b> ${esc(codexInfo.version)}<br><span class="meta">${esc(codexInfo.path)}</span>` : `<b style="color:var(--danger)">${esc(t('gpt.notFound'))}</b><br><span class="meta">${esc(t('gpt.notFoundHint'))}</span>`) : esc(t('cl.checking'))}</p>
+      <div class="ed-field" style="max-width:560px"><label>${esc(t('cl.own'))}</label><input class="field-in" data-set="codex" value="${esc(cfg.codex || '')}" placeholder="${esc(t('cl.auto'))}" style="width:100%"></div>
+      <p><button class="btn-sm" data-cl="pickCodex">${esc(t('cl.pick'))}</button> <button class="btn-sm" data-cl="checkCodex">${esc(t('cl.check'))}</button></p>
+      <h3>${esc(t('cl.account'))}</h3>
+      ${codexInfo.path ? (codexInfo.loggedIn ? `<p>${esc(t('gpt.ok', {how: codexInfo.how}))}</p>`
+        : `<p class="hint">${esc(t('gpt.signInHint'))}</p><p><button class="btn-sm primary" data-cl="loginCodex"${loginBusy ? ' disabled' : ''}>${esc(loginBusy ? t('cl.loginBusy') : t('cl.login'))}</button></p>`) : ''}
+      ${loginOut || loginBusy ? `<div class="login-out" id="loginOut">${esc(loginOut || '…')}</div>` : ''}
+      <p class="hint">${esc(t('gpt.privacy'))}</p><p class="hint">${esc(t('gpt.rights'))}</p>`}`,
     control: `<h3>${esc(t('ctl.rules'))}</h3><p class="hint">${esc(t('ctl.rulesHint'))}</p>
       <div class="ed-field" style="max-width:620px"><textarea data-set="rules" style="height:140px" placeholder="${esc(t('ctl.rulesPh'))}">${esc(cfg.rules || '')}</textarea></div>
       <h3>${esc(t('ctl.limit'))}</h3><p class="hint">${esc(t('ctl.limitHint'))}</p>
@@ -1349,7 +1378,7 @@ function renderSettings() {
        <div class="theme-name">${esc(t('theme.' + th))}<span>${settings.theme === th ? '&#10003;' : ''}</span></div></button>`).join('') + '</div>',
     keys: '<div id="keysBox"></div>'
   };
-  const sections = ['general', 'claude', 'control', 'appearance', 'keys'];
+  const sections = ['general', 'claude', 'chatgpt', 'control', 'appearance', 'keys'];
   $('#modalBody').innerHTML = `<div class="prefs"><nav>${sections.map(s => `<button data-sec="${s}" class="${s === prefsSection ? 'active' : ''}">${esc(t('set.' + s))}</button>`).join('')}</nav>
     <section>${body[prefsSection]}</section></div>`;
   if (prefsSection === 'keys') Shortcuts.editor($('#keysBox'), {MENUS, keys: settings.keys || {}, t, fmtKey, comboOf, label: a => t('a.' + a),
@@ -1362,6 +1391,9 @@ function renderSettings() {
     if (el.dataset.themePick) { setTheme(el.dataset.themePick); renderSettings(); return; }
     const c = el.dataset.cl;
     if (c === 'check') checkClaude();
+    if (c === 'checkCodex') checkCodex();
+    if (c === 'loginCodex') login('codex_login', cfg.codex);
+    if (c === 'pickCodex') { const p = await invoke('pick_file', {filterName: 'Codex', exts: []}); if (p) { cfg.codex = p; saveCfg(); checkCodex(); renderSettings(); } }
     if (c === 'login') login();
     if (c === 'pick') { const p = await invoke('pick_file', {filterName: 'Claude Code', exts: []}); if (p) { cfg.claude = p; saveCfg(); checkClaude(); renderSettings(); } }
     if (c === 'code') { const v = $('#loginCode').value; if (v.trim()) invoke('login_input', {text: v}).then(() => { $('#loginCode').value = ''; }).catch(err => toast(String(err))); }
@@ -1376,6 +1408,7 @@ function renderSettings() {
     if (k === 'dailyMinutes') { cfg.dailyMinutes = +e.target.value; limitNoted = false; saveCfg(); updateStatus(); renderSettings(); return; }
     if (k === 'model') { cfg.model = e.target.value; saveCfg(); return; }
     if (k === 'claude') { cfg.claude = e.target.value.trim(); saveCfg(); checkClaude(); }
+    if (k === 'codex') { cfg.codex = e.target.value.trim(); saveCfg(); checkCodex(); }
   };
   b.oninput = e => { if (e.target.dataset.set === 'rules') { cfg.rules = e.target.value; saveCfg(); } };
 }
@@ -1466,7 +1499,7 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
     cfg.todo = {...newCfg().todo, ...(cfg.todo || {})};
     cfg.chat = {...newCfg().chat, ...(cfg.chat || {})};
     cfg.link = {...newCfg().link, ...(cfg.link || {})};
-    if (invoke) invoke('config_save', {content: JSON.stringify(cfg, null, 1), claude: cfg.claude || ''}).catch(() => {});
+    if (invoke) invoke('config_save', {content: JSON.stringify(cfg, null, 1), claude: cfg.claude || '', codex: cfg.codex || ''}).catch(() => {});
   } catch (e) { cfg = newCfg(); toast(t('toast.loadFail', {e})); }
   await Promise.all(cfg.todoFiles.map(f => loadTodo(f.path)));
   await refresh();
@@ -1474,6 +1507,7 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
   applySettings();
   renderAll();
   checkClaude();
+  checkCodex();
   if (invoke) {
     listen('runs-changed', refreshSoon);
     listen('link-task', takeTasks);
