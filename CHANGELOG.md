@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.0 — 2026-10-30
+- To-do lists stay short: each list shows only its last 10 ticked items (last in the file), a button under the list shows
+  the older ones and hides them again. Open items always show; a section with nothing to show disappears.
+
 ## 0.8.1 — 2026-10-30
 - The "Full view" button fits again: in the narrow details panel its text no longer wraps out of the button. A long
   task title is shortened with "…" instead (the whole title shows on hover); the ⤢ sign sits centered next to the text.

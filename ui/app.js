@@ -161,6 +161,14 @@ const todoKey = (path, text) => path + '\u0000' + text;
 /* New items typed in the app: the text being typed per list, and where it goes (the last section used, else the one
    with the first open item). */
 const addDraft = {};
+/* A list shows only its last DONE_SHOWN ticked items; `doneAll` holds the lists opened in full (for this session). */
+const DONE_SHOWN = 10, doneAll = {};
+function itemsShown(items, all) {
+  const done = items.filter(i => i.done);
+  if (all || done.length <= DONE_SHOWN) return {items, hidden: 0};
+  const cut = done[done.length - DONE_SHOWN];
+  return {items: items.filter(i => !i.done || i.line >= cut.line), hidden: done.length - DONE_SHOWN};
+}
 function addSection(path) {
   const d = todos[path] || {}, secs = d.sections || [], f = listOf(path);
   if (f && f.addSection !== undefined && (f.addSection === '' || secs.includes(f.addSection))) return f.addSection;
@@ -427,8 +435,9 @@ function viewTodos() {
       <div class="meta" style="margin:-2px 0 6px">${esc(f.own ? t('todo.ownWhere') : t('todo.allWhere'))}: ${esc((pr.dirs || []).map(baseName).join(', ') || t('rt.noDirsShort'))} · ${esc(t('lv.' + pr.level))}${pr.auto ? ' · ' + esc(t('ed.autoShort')) : ''}</div>`;
     if (d.error) h += `<div class="empty-s" style="color:var(--danger)">${esc(d.error)}</div>`;
     else if (!d.items.length) h += `<div class="empty-s">${esc(t('todo.noItems'))}</div>`;
+    const shown = itemsShown(d.items, doneAll[f.path]);
     let sect = null;
-    for (const it of d.items) {
+    for (const it of shown.items) {
       if (it.section !== sect) { sect = it.section; if (sect) h += `<div class="group-h">${esc(sect)}</div>`; }
       const r = runForItem(f.path, it.text), st = r ? (stOf(r)) : '';
       h += `<div class="row d${Math.min(2, it.depth)}${it.done ? ' done' : ''}${r && sel && sel.id === r.id ? ' sel' : ''}"${r ? ` data-run="${esc(r.id)}"` : ''}>
@@ -436,6 +445,8 @@ function viewTodos() {
         ${st ? statusBadge(st) : ''}
         ${!it.done && st !== 'running' ? `<button class="btn-sm${st ? '' : ' primary'}" data-doitem="${esc(f.path)}" data-line="${it.line}">${esc(st ? t('todo.again') : t('todo.do'))}</button>` : ''}</div>`;
     }
+    if (shown.hidden || (doneAll[f.path] && d.items.filter(i => i.done).length > DONE_SHOWN))
+      h += `<div class="done-more"><button class="btn-sm" data-done-all="${esc(f.path)}">${esc(shown.hidden ? tn('todo.doneMore', shown.hidden) : t('todo.doneLess', {n: DONE_SHOWN}))}</button></div>`;
     if (!d.error) {
       const secs = d.sections || [], cur = addSection(f.path);
       const opts = (d.items.some(i => !i.section) || !secs.length ? [''] : []).concat(secs);
@@ -990,6 +1001,7 @@ $('#view').addEventListener('click', async e => {
   if (d.stopRoutine) { const r = data.runs.find(x => x.spec.routineId === d.stopRoutine && isRunning(x.id)); if (r) stopRun(r.id); return; }
   if (d.doitem) { const it = (todos[d.doitem].items || []).find(i => i.line === +d.line); if (it) doItem(d.doitem, it); return; }
   if (d.doall) return doList(d.doall);
+  if (d.doneAll) { doneAll[d.doneAll] = !doneAll[d.doneAll]; return renderView(); }
   if (d.add) return addItem(d.add, false);
   if (d.addGo) return addItem(d.addGo, true);
   if (d.unlink) { cfg.todoFiles = cfg.todoFiles.filter(f => f.path !== d.unlink); if (sel && sel.type === 'list' && sel.id === d.unlink) sel = null; saveCfg(); return renderAll(); }

@@ -11,7 +11,7 @@ Unlike the other Studio apps it needs the internet and a Claude account: the wor
 [Claude Code](https://claude.com/claude-code) (the `claude` program) with **your own sign-in**. Agent Studio stores no
 API key and no password; routines, logs and history stay on your computer.
 
-## Features (0.8.1)
+## Features (0.9.0)
 - **Linked with the other Studio apps:** Markdown, PDF, Data, Slides and Plan Studio have **"Send to Agent Studio"**
   (Ctrl+Shift+A) — a file or a selection with a task (proofread, summarize, quiz, explain the data, slides from an
   outline …). It runs here as a chat marked with the app's name; the answer and the files Claude made go back to the
@@ -26,7 +26,7 @@ API key and no password; routines, logs and history stay on your computer.
   approvals (exactly what was refused, e.g. `git push origin main`; approve or refuse, with a note), "done" notes with a
   summary, and problems. A number on the app icon and in the window title, and a notification of the system. Your answer
   goes on in the same conversation.
-- **Linked to-do lists:** any Markdown file with checkboxes (`- [ ] …`), e.g. your `TODO.md`, grouped by its headings.
+- **Linked to-do lists:** any Markdown file with checkboxes (`- [ ] …`), e.g. your `TODO.md`, grouped by its headings. Only the last 10 ticked items of a list show; a button below it opens the rest.
   "Do it" per item or "Work through" the whole list; each item shows its state (running · needs you · done · problem).
   The file stays yours: Claude only ticks an item when you allowed it for that file. Changes are noticed at once.
   Link as many lists as you like (several at once), each with **its own folders and rights** or the ones for all lists.
