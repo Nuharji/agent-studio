@@ -1,6 +1,6 @@
 //! Linked to-do lists: any Markdown file with checkboxes (`- [ ] …`, `* [x] …`, `1. [ ] …`). The file stays the
 //! person's own — it is only read; a box is ticked only when they allowed it for that file, and a new item is only
-//! written when they add one in the app.
+//! written when they add one in the app or through MCP (a client they connected).
 
 use serde::Serialize;
 

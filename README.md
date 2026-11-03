@@ -83,6 +83,35 @@ Agent Studio takes it, starts a chat and keeps `outbox/<id>.json` up to date (st
 ```` ```studio-result ```` block, e.g. Plan Studio's entries); the app removes it once seen. `status.json` holds what
 needs you, what runs, what was done and a heartbeat.
 
+## MCP
+Agent Studio is also an MCP server, so Claude (Desktop or Code), ChatGPT and other MCP clients can use what it can do:
+started with `--mcp`, the program opens no window and speaks MCP on stdin / stdout until the client closes it.
+
+- `todo_read` — Reads a Markdown to-do list: its items (line, text, done, section, depth) and sections.
+- `todo_add` — Adds a new item at the end of a section of a Markdown to-do list.
+- `agent_status` — Whether Agent Studio is open, and what needs the person, runs and was done today.
+- `send_task` — Sends a task to Agent Studio. It runs with read rights and without internet as soon as Agent Studio is open and takes tasks. Returns the task's id.
+- `task_result` — How a task from send_task goes and what came out of it.
+
+Markdown to-do lists can be added to but not ticked (ticking stays with the app, only for lists you allowed); a task sent from a client always runs with read rights and without internet, and goes through Settings → Control like tasks from the other apps. Files are given as full paths.
+
+Claude Code: `claude mcp add agent-studio -- "/Applications/Agent Studio.app/Contents/MacOS/agent-studio" --mcp`.
+Claude Desktop (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "agent-studio": {
+      "command": "/Applications/Agent Studio.app/Contents/MacOS/agent-studio",
+      "args": [
+        "--mcp"
+      ]
+    }
+  }
+}
+```
+The program is `/Applications/Agent Studio.app/Contents/MacOS/agent-studio` on macOS, `agent-studio.exe` in the install folder on
+Windows, and `agent-studio` (or the AppImage) on Linux.
+
 ## Layout
 ```
 ui/                 index.html, app.js; native.js, autohide.js, shortcuts.js, shared.js (the same in every Studio app)

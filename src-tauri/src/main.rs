@@ -6,6 +6,8 @@ mod codex;
 mod link;
 mod runner;
 mod runs;
+mod mcp;
+mod mcp_tools;
 mod shared;
 mod slash;
 mod todo;
@@ -371,6 +373,7 @@ fn clipboard_write(app: AppHandle, text: String) -> Result<(), String> {
 }
 
 fn main() {
+    if mcp::wanted() { return mcp_tools::run(); }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
