@@ -1,17 +1,32 @@
 # Agent Studio (Rust / Tauri)
 
-> **Status: Pre-Alpha (0.1)** — the first version; things may still change.
+> **Status: 1.0 — rebuilt for building apps with AI**; still young, things may change.
 
-Claude as your assistant, under your control — part of the Studio family. Claude works for you by **routines**, by your
-**Markdown to-do list** or on request; you decide what it may do, approve what goes beyond, see every step live and can
-stop everything at any time. The native shell is Rust ([Tauri 2](https://tauri.app)); the UI is plain HTML/JS in `ui/`,
-with the same chrome and controls as the other Studio apps.
+Build apps with AI — part of the Studio family. Everything is organized by **project**: the apps you build, each with
+its own rights for Claude, its to-do list, its sessions with Claude, its commands (build, test, start) and its changes
+(git). You decide what Claude may do, approve what goes beyond, see every step live and can stop everything at any time.
+The native shell is Rust ([Tauri 2](https://tauri.app)); the UI is plain HTML/JS in `ui/`, with the same chrome and
+controls as the other Studio apps. (The AI tools for school are in Plan Studio.)
 
 Unlike the other Studio apps it needs the internet and a Claude account: the work is done by
 [Claude Code](https://claude.com/claude-code) (the `claude` program) with **your own sign-in**. Agent Studio stores no
 API key and no password; routines, logs and history stay on your computer.
 
-## Features (0.10.1)
+## Features (1.0)
+- **Projects** in the sidebar, an **Overview** of all apps (version, branch, open tasks, changes, what runs). Add a folder
+  (Ctrl+O) — Agent Studio reads name, version, stack, commands, git state and README / STATUS / CHANGELOG; a folder with
+  several apps offers to add each one. Setup per project: name, color, folder and more folders, to-do list, rules and
+  the rights for Claude (level, allowed commands, internet, auto mode, model, never delete, time limit).
+- **The project page**: a box with the kinds of work — **Feature, Fix a bug, Tests, Clean up, Code review, Release,
+  Question** — each with its own instructions for Claude (reviews and questions read-only, "Plan first" on request);
+  open tasks, sessions, commands, last commits and the documents beside it. Tabs: Overview, Tasks, Sessions, Commands,
+  Changes, Setup (Ctrl+1 … Ctrl+5).
+- **Commands**: build, test, start the app or any command — run by Agent Studio itself in the project folder (login
+  shell), with live output; a failed one goes to Claude with "Let Claude fix it". Ctrl+B, Ctrl+Shift+T, Ctrl+Shift+R.
+- **Changes**: what is not committed yet, with the diff; let Claude review it (read-only), commit it or push it.
+- **New app with AI** (Ctrl+Shift+A): name, place, kind (Studio app, web app, desktop app, Rust, Python, or Claude
+  decides) and what it should do — Agent Studio makes the folder, Claude sets the app up (skeleton, README, CHANGELOG,
+  TODO.md, first tests, git with a first commit) in auto mode; pushing and publishing stay with you.
 - **ChatGPT as the other AI:** a ChatGPT model can be picked wherever a model is picked (or `/model chatgpt`). The work is
   done by OpenAI's [Codex CLI](https://github.com/openai/codex) (`codex exec --json`) with your ChatGPT account; Settings → ChatGPT
   finds it and signs in. Rights come from Codex's sandbox with your own Codex config and rules ignored: read-only, or
@@ -31,10 +46,10 @@ API key and no password; routines, logs and history stay on your computer.
   approvals (exactly what was refused, e.g. `git push origin main`; approve or refuse, with a note), "done" notes with a
   summary, and problems. A number on the app icon and in the window title, and a notification of the system. Your answer
   goes on in the same conversation.
-- **Linked to-do lists:** any Markdown file with checkboxes (`- [ ] …`), e.g. your `TODO.md`, grouped by its headings. Only the last 10 ticked items of a list show; a button below it opens the rest.
+- **To-do lists per project:** any Markdown file with checkboxes (`- [ ] …`), e.g. your `TODO.md`, grouped by its headings. Only the last 10 ticked items of a list show; a button below it opens the rest.
   "Do it" per item or "Work through" the whole list; each item shows its state (running · needs you · done · problem).
   The file stays yours: Claude only ticks an item when you allowed it for that file. Changes are noticed at once.
-  Link as many lists as you like (several at once), each with **its own folders and rights** or the ones for all lists.
+  Each project has one list (e.g. its `TODO.md`), worked on with the project's folders and rights.
   **New to-dos right in the app:** type one under a list, pick the section (e.g. "Medium priority") and press Enter —
   it is written into the file at the end of that section; "Add & do it" (Ctrl+Enter) lets Claude start on it at once.
 - **Routines:** a standing task in your words, the folders, the rights and when — only by button, every day, Mon–Fri,
@@ -114,8 +129,10 @@ Windows, and `agent-studio` (or the AppImage) on Linux.
 
 ## Layout
 ```
-ui/                 index.html, app.js; native.js, autohide.js, shortcuts.js, shared.js (the same in every Studio app)
-src-tauri/src/      main.rs — commands; runner.rs — rights, arguments, reading Claude's output, git (changes, diff, undo);
+ui/                 index.html, app.js (runs, chats, routines, settings), projects.js (projects, their page, commands,
+                    changes, new app); native.js, autohide.js, shortcuts.js, shared.js (the same in every Studio app)
+src-tauri/src/      main.rs — commands; project.rs — what a project is (stack, commands, git); jobs.rs — running
+                    commands with live output; runner.rs — rights, arguments, reading Claude's output, git (changes, diff, undo);
                     runs.rs — runs, logs, the box, notifications; todo.rs — Markdown checkboxes; slash.rs — own slash commands and skills;
                     shared.rs — shared settings; agentlink.rs — the link to the other apps (the same in every app);
                     link.rs — Agent Studio's side of it: tasks in, results out, status.json

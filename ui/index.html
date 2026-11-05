@@ -136,7 +136,7 @@ select:focus,input:focus{border-color:var(--accent)}
 .btn-sm.primary:hover{background:var(--cta-hover)}
 
 /* Main layout */
-.main{display:grid;grid-template-columns:44px 1fr auto;min-height:0;overflow:clip}
+.main{display:grid;grid-template-columns:224px 1fr auto;min-height:0;overflow:clip}
 .tools{background:var(--chrome);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:6px 0;gap:1px;overflow-y:auto}
 .tools .ibtn{width:34px;height:32px}
 .tools .sep{width:22px;height:1px;background:var(--border);margin:4px 0;flex:none}
@@ -256,7 +256,7 @@ input[type=range]{width:100%;max-width:360px;accent-color:var(--accent)}
 .tc-dock{background:var(--panel);border-left:1px solid var(--line)}
 </style>
 
-<!-- Agent Studio: needs you, to-dos, routines, history -->
+<!-- Agent Studio: projects (apps built with AI), needs you, chats, routines, history -->
 <style>
 body{grid-template-columns:minmax(0,1fr)}
 .optbar{min-width:0;overflow:hidden}
@@ -442,6 +442,68 @@ body{grid-template-columns:minmax(0,1fr)}
 .thinking{display:flex;align-items:center;gap:7px;margin-top:6px;font-size:12px;color:var(--dim)}
 .thinking i{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:think 1.2s ease-in-out infinite}
 @keyframes think{0%,100%{opacity:.25;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
+/* Sidebar: the places and the projects */
+.side{background:var(--chrome);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:stretch;padding:8px 6px;gap:1px;overflow-y:auto;min-height:0}
+html[data-l-flex] .main>.side.tools{width:224px}
+.side button{display:flex;align-items:center;gap:9px;width:100%;background:none;border:1px solid transparent;border-radius:var(--radius);padding:5px 8px;text-align:left;cursor:pointer;color:var(--text);min-height:30px}
+.side button:hover{background:var(--hover)}
+.side button.on{background:var(--btn-active-bg);border-color:var(--btn-active-border);color:var(--strong);font-weight:600}
+.side svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.side button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side .count{min-width:17px;height:17px;padding:0 5px;border-radius:9px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;line-height:17px;text-align:center;flex:none}
+.side-h{display:flex;align-items:center;justify-content:space-between;margin:14px 4px 4px 8px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:600}
+.side .side-add{width:22px;min-height:22px;height:22px;padding:0;justify-content:center;font-size:15px;color:var(--dim)}
+.side .sch{flex:none;font-size:10.5px;color:var(--warn);font-weight:600}
+.side .snew{margin-top:8px;color:var(--accent)}
+.ptile{width:20px;height:20px;border-radius:6px;flex:none;display:inline-grid;place-items:center;color:#fff;font-size:9px;font-weight:800;letter-spacing:-.02em;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--pc) 70%,#000),var(--pc))}
+.ptile.big{width:40px;height:40px;border-radius:10px;font-size:15px}
+/* Home: the apps */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:12px}
+.proj-card{cursor:pointer;margin:0;display:flex;flex-direction:column;gap:8px}
+.proj-card:hover{border-color:var(--accent)}
+.pc-head{display:flex;align-items:center;gap:10px}
+.pc-name{display:flex;flex-direction:column;min-width:0;flex:1}.pc-name b{color:var(--strong);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-stats{display:flex;gap:10px;flex-wrap:wrap;color:var(--dim);font-size:11.5px;align-items:center}
+.chip{font-size:10.5px;padding:1px 7px;border-radius:8px;border:1px solid var(--card-border);color:var(--dim);white-space:nowrap}
+.home-need{display:flex;align-items:center;gap:10px;cursor:pointer}
+.wtag{font-size:11px;color:var(--dim);white-space:nowrap;flex:none}
+/* The project page */
+.proj-head{display:flex;align-items:center;gap:14px;margin:0 0 12px;flex-wrap:wrap}
+.ph-main{min-width:0;flex:1 1 300px}.ph-main h1{margin:0;font-size:20px;font-weight:650;color:var(--strong)}
+.ph-sub{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:3px}
+.pdir{direction:rtl;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:360px}
+.ptabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 14px;overflow-x:auto}
+.ptabs button{background:none;border:0;border-bottom:2px solid transparent;padding:7px 12px;color:var(--dim);font-weight:600;cursor:pointer;white-space:nowrap}
+.ptabs button:hover{color:var(--text)}
+.ptabs button.on{color:var(--strong);border-bottom-color:var(--accent)}
+.ptabs b{font-size:10.5px;background:var(--hover);border-radius:8px;padding:0 6px;color:var(--text)}.ptabs b.warn{background:var(--warn);color:#fff}
+.ov-grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media (max-width:1100px){.ov-grid{grid-template-columns:minmax(0,1fr)}}
+.ov-main .composer{max-width:none;margin-bottom:6px}.ov-main .composer-foot{max-width:none;text-align:left;margin:0 0 14px 4px}
+.work-chips{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 8px}
+.wchip{border:1px solid var(--card-border);background:none;color:var(--dim);border-radius:12px;padding:3px 10px;font-size:12px;cursor:pointer}
+.wchip:hover{color:var(--text);background:var(--hover)}
+.wchip.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.work-box textarea{min-height:44px}
+.commit{display:flex;gap:8px;align-items:baseline;padding:3px 2px;font-size:12px}.commit code{color:var(--accent);font:11px Consolas,Menlo,monospace}
+.commit .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmd-quick{display:flex;flex-direction:column;gap:5px}
+.cmd-btn{display:flex;align-items:center;gap:8px;background:var(--seg-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:5px 8px;cursor:pointer;text-align:left;min-width:0}
+.cmd-btn:hover{border-color:var(--accent)}
+.cmd-btn b{font-weight:600;flex:none}.cmd-btn code{color:var(--dim);font:11px Consolas,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row code.grow{font:12px Consolas,Menlo,monospace}
+.console{font:11.5px/1.5 Consolas,Menlo,monospace;background:var(--editor-bg);color:var(--editor-fg);border:1px solid var(--card-border);border-radius:var(--radius);padding:8px 10px;max-height:460px;min-height:120px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;user-select:text}
+.console .e{color:var(--warn)}
+.todo-add #cmdKind{flex:0 0 120px}
+.gst{display:inline-block;width:20px;color:var(--warn);font-weight:700}
+.diff.inline{height:auto;max-height:560px;border-radius:var(--radius);border:1px solid var(--card-border)}
+.setup-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:1100px){.setup-grid{grid-template-columns:minmax(0,1fr)}}
+.colors{display:flex;gap:6px}.colors button{width:22px;height:22px;border-radius:6px;border:2px solid transparent;cursor:pointer}.colors button.on{border-color:var(--strong)}
+.tpl-grid button.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.ctxbar .ptile{width:16px;height:16px;font-size:7.5px;border-radius:4px}.ctx-name{color:var(--strong)}
+.answer.doc{max-height:none}
 @media (max-width:860px){.full-grid{grid-template-columns:minmax(0,1fr)}.full-side{position:static;max-height:none}}
 .st-run::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px}
 .st-run.busy::before{background:var(--accent);animation:pulse 1.2s infinite}
@@ -454,15 +516,16 @@ body{grid-template-columns:minmax(0,1fr)}
   <div class="logo"><span>Ag</span></div>
   <nav id="menus"></nav>
   <div class="apptitle" id="apptitle">Agent Studio</div>
-  <button class="cta" data-act="newTask" data-i18n="ui.ctaTask">+ Task</button>
+  <button class="cta" data-act="newApp" data-i18n="ui.ctaApp">+ New app</button>
 </header>
 <div class="optbar">
   <div class="group" id="fileBtns"></div>
+  <div class="group" id="projBtns"></div>
   <div class="ctxbar" id="ctxBar"></div>
   <div class="group" id="viewBtns"></div>
 </div>
 <div class="main">
-  <aside class="tools" id="tools"></aside>
+  <aside class="side tools" id="side"></aside>
   <section class="center">
     <div class="view-main" id="view"></div>
   </section>
@@ -492,6 +555,7 @@ body{grid-template-columns:minmax(0,1fr)}
 <script src="autohide.js"></script>
 <script src="shortcuts.js"></script>
 <script src="shared.js"></script>
+<script src="projects.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -288,7 +288,9 @@ fn inbox_item(r: &Run) -> Option<Item> {
             let n = r.needs.clone().unwrap_or_default();
             let kind = if !r.denials.is_empty() { "approval" } else if n.kind == "approval" { "approval" } else { "question" };
             let text = if !n.text.is_empty() { n.text } else if de { "Die KI möchte etwas tun, das dieser Lauf nicht darf:".into() } else { "The AI wants to do something this run may not:".into() };
-            Some(Item { kind: kind.into(), text, options: n.options, rules: r.denials.iter().map(|d| d.rule.clone()).collect(), denials: r.denials.clone(), ..base })
+            let mut rules: Vec<String> = r.denials.iter().map(|d| d.rule.clone()).collect();
+            for c in n.commands.iter().filter(|_| kind == "approval") { let rule = format!("Bash({c})"); if !rules.contains(&rule) { rules.push(rule); } }
+            Some(Item { kind: kind.into(), text, options: n.options, rules, denials: r.denials.clone(), ..base })
         }
         // A chat's answer is read in the chat itself.
         "done" if r.spec.chat => None,
@@ -395,7 +397,7 @@ pub fn answer(app: &AppHandle, item_id: &str, text: String, approve: Option<bool
         ("approval", Some(true)) => {
             let what = if it.rules.is_empty() { it.text.clone() } else { it.rules.join(", ") };
             let p = if de { format!("Freigegeben: {what}. Mach jetzt damit weiter.") } else { format!("Approved: {what}. Go on with it now.") };
-            continue_run(app, &it.run_id, if text.is_empty() { p } else { format!("{p}\n{text}") }, it.rules.clone()).map(Some)
+            continue_run(app, &it.run_id, if text.is_empty() { p } else { format!("{p}\n{text}") }, runner::approval_rules(&it.rules)).map(Some)
         }
         ("approval", Some(false)) => {
             let p = if de { "Nicht freigegeben. Mach ohne das weiter, wenn es geht — sonst hör auf und fasse zusammen." } else { "Not approved. Go on without it if you can — else stop and sum up." };
@@ -427,7 +429,7 @@ mod tests {
         let it = inbox_item(&r).unwrap();
         assert_eq!((it.kind.as_str(), it.rules.clone()), ("approval", vec!["Bash(git push)".to_string()]));
         r.denials.clear();
-        r.needs = Some(Needs { kind: "question".into(), text: "Welche?".into(), options: vec!["A".into()] });
+        r.needs = Some(Needs { kind: "question".into(), text: "Welche?".into(), options: vec!["A".into()], ..Default::default() });
         let it = inbox_item(&r).unwrap();
         assert_eq!((it.kind.as_str(), it.text.as_str(), it.options.len()), ("question", "Welche?", 1));
         r.status = "stopped".into();

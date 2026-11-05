@@ -1,8 +1,10 @@
-/* Agent Studio — Claude as an assistant of the Studio family: routines, a linked Markdown to-do list and the
-   "Needs you" box, under the person's control. Same chrome as the other apps (menus from MENUS with customizable
-   shortcuts, option bar, tool rail, panel, status bar, settings dialog).
+/* Agent Studio 1.0 — building apps with AI. Everything is organized by project (projects.js: the apps, their
+   page with the box for the kinds of work, to-dos, sessions, commands, changes, the new-app wizard); this file holds
+   what all projects share: the runs and their conversations, "Needs you", chats, routines, slash commands, the link
+   to the other Studio apps, settings, menus and the boot. Same chrome as the other Studio apps (menus from MENUS with
+   customizable shortcuts, option bar, panel, status bar, settings dialog) with a sidebar of the projects.
    Rust runs Claude Code (runner.rs / runs.rs) and keeps the runs, their logs and the box; this file keeps the setup
-   (config.json: routines, to-do lists, rules, limits), plans the routines and draws everything. */
+   (config.json: projects, routines, rules, limits), plans the routines and draws everything. */
 'use strict';
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const STORE = 'agent-studio.v1';
@@ -54,12 +56,12 @@ const baseName = p => String(p || '').split(/[\\/]/).filter(Boolean).pop() || p;
 /* ================= State ================= */
 const THEMES = ['dark', 'light', 'github', 'github-dark'];
 const LEVELS = ['read', 'edit', 'commit', 'publish'];
-const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, view: 'inbox', histFilter: 'all'};
+const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, view: 'home', project: '', ptab: 'overview', histFilter: 'all'};
 let settings = {...DEF}, booted = false;
 /* The model decides which AI does a run: Claude (Claude Code) or ChatGPT (OpenAI's Codex CLI, see codex.rs). */
 const MODEL_OPTS = ['', 'opus', 'sonnet', 'haiku', 'chatgpt', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-luna', 'gpt-6-astra'];
 const isCodex = m => m === 'chatgpt' || String(m || '').startsWith('gpt-');
-const newCfg = () => ({version: 1, routines: [], todoFiles: [],
+const newCfg = () => ({version: 2, projects: [], routines: [], todoFiles: [],
   todo: {dirs: [], level: 'edit', commands: '', web: false, noDelete: true, maxMinutes: 30, prompt: ''},
   chat: {dirs: [], level: 'read', web: true, auto: false, noDelete: true, maxMinutes: 30, model: ''},
   link: {accept: true, level: 'edit', web: true},
@@ -115,10 +117,12 @@ async function startRun(spec, {show = true, manual = true} = {}) {
   } catch (e) { toast(String(e)); return null; }
 }
 async function startRoutine(r, manual = true) {
+  const rp = r.project && projectOf(r.project);
+  if (rp) r.dirs = projDirs(rp);
   if (!(r.dirs || []).length) { toast(t('rt.noDirs')); sel = {type: 'routine', id: r.id}; setView('routines'); return; }
   if (!String(r.prompt || '').trim()) { toast(t('rt.noPrompt')); sel = {type: 'routine', id: r.id}; setView('routines'); return; }
   r.lastRun = Date.now(); saveCfg();
-  const id = await startRun(specFrom(r), {show: manual, manual});
+  const id = await startRun(specFrom(r, rp ? {project: rp.id, work: 'routine'} : {}), {show: manual, manual});
   if (id && !manual) toast(t('rt.started', {name: r.name}));
 }
 async function stopRun(id) { if (invoke) { await invoke('run_stop', {id}); toast(t('run.stopping')); } }
@@ -135,12 +139,15 @@ async function refresh() {
   if (booted) renderAll();
 }
 const refreshSoon = () => { clearTimeout(refreshT); refreshT = setTimeout(refresh, 120); };
+/* After a run changed something, the project's git state is read again (shortly after, once for several events). */
+let infoT = 0;
+const infoSoon = () => { clearTimeout(infoT); infoT = setTimeout(() => { const p = curProject(); if (p) loadInfo(p, true).then(() => { delete diffs[p.id]; renderSide(); if (!typing() && !full) renderView(); }); }, 1500); };
 /* After the runs changed: tick finished to-do items, the badge, "done" notes when they are not wanted. */
 async function afterRuns() {
   for (const r of data.runs) {
     const td = r.spec.todo;
     if (!td || r.status !== 'done' || cfg.ticked.includes(r.id)) continue;
-    const f = cfg.todoFiles.find(x => x.path === td.path);
+    const f = listOf(td.path);
     if (!f || !f.tick) continue;
     cfg.ticked = [r.id, ...cfg.ticked].slice(0, 500);
     const ok = await invoke('todo_tick', {path: td.path, line: td.line, text: td.text}).catch(() => false);
@@ -200,38 +207,30 @@ async function addItem(path, go) {
 function runForItem(path, text) {
   return data.runs.find(r => r.spec.todo && r.spec.todo.path === path && r.spec.todo.text === text);
 }
-/* How Claude works on a list: its own folders and rights, or the ones for all lists. */
-const listOf = path => cfg.todoFiles.find(f => f.path === path);
-const profileOf = path => { const f = listOf(path); return f && f.own ? f : cfg.todo; };
-function todoProfileOk(path) {
-  if ((profileOf(path).dirs || []).length) return true;
-  toast(t('todo.needDirs'));
-  const f = listOf(path);
-  sel = f && f.own ? {type: 'list', id: path} : {type: 'todo'}; setView('todos'); return false;
-}
+/* A to-do list belongs to a project (its `todo`): Claude works on an item with the project's folders and rights. */
+const listOf = path => (cfg.projects || []).find(p => p.todo === path);
 async function doItem(path, it) {
-  if (!todoProfileOk(path)) return;
-  const p = profileOf(path), where = it.section ? t('todo.inSection', {s: it.section}) : '';
-  const prompt = t('todo.prompt', {path, where, text: it.text}) + (p.prompt ? '\n\n' + p.prompt : '');
-  await startRun(specFrom({...p, id: null, name: '', title: it.text}, {prompt, todo: {path, line: it.line, text: it.text}}));
+  const p = listOf(path); if (!p) return toast(t('todo.noProject'));
+  const where = it.section ? t('todo.inSection', {s: it.section}) : '';
+  const rid = await startRun(projectSpec(p, {title: it.text, said: it.text, prompt: t('todo.prompt', {path, where, text: it.text}), todo: {path, line: it.line, text: it.text}}), {show: false});
+  if (rid) openFull(rid);
 }
 async function doList(path) {
-  if (!todoProfileOk(path)) return;
-  const p = profileOf(path);
-  const prompt = t('todo.promptAll', {path}) + (p.prompt ? '\n\n' + p.prompt : '');
-  await startRun(specFrom({...p, id: null, name: '', title: t('todo.allTitle', {name: baseName(path)})}, {prompt}));
+  const p = listOf(path); if (!p) return toast(t('todo.noProject'));
+  const rid = await startRun(projectSpec(p, {title: t('todo.allTitle', {name: p.name}), said: t('todo.allTitle', {name: p.name}), prompt: t('todo.promptAll', {path})}), {show: false});
+  if (rid) openFull(rid);
 }
+/* Links a to-do list to the project shown (or to a new project in the list's folder). */
 async function linkTodo() {
   if (!invoke) return toast(t('ui.appOnly'));
   const paths = await invoke('pick_files', {filterName: 'Markdown', exts: ['md', 'markdown', 'txt']});
-  const fresh = paths.filter(p => !cfg.todoFiles.some(f => f.path === p));
   if (!paths.length) return;
-  if (!fresh.length) return toast(t('todo.already'));
-  for (const path of fresh) { cfg.todoFiles.push({path, tick: false}); await loadTodo(path); }
-  saveCfg();
-  setView('todos');
-  const open = fresh.reduce((n, p) => n + todos[p].items.filter(i => !i.done).length, 0);
-  toast(fresh.length > 1 ? t('todo.linkedMany', {k: fresh.length, n: open}) : tn('todo.linked', open));
+  let p = curProject();
+  if (!p) p = projectByDir(dirOf(paths[0])) || await addProject(dirOf(paths[0]));
+  if (!p) return;
+  p.todo = paths[0]; saveCfg(); await loadTodo(p.todo);
+  openProject(p.id, 'tasks');
+  toast(tn('todo.linked', todos[p.todo].items.filter(i => !i.done).length));
 }
 /* Changes of the lists: re-read them, and start routines that wait for a change (after a minute of quiet). */
 const seen = {};         // path → stamp seen
@@ -239,7 +238,7 @@ const ownStamp = {};     // path → true while the change is ours (a tick)
 function ownChange(path) { ownStamp[path] = true; }
 async function watchTodos() {
   if (!invoke) return;
-  const paths = [...new Set([...cfg.todoFiles.map(f => f.path), ...cfg.routines.filter(r => r.schedule && r.schedule.kind === 'todo' && r.todoFile).map(r => r.todoFile)])];
+  const paths = [...new Set([...cfg.projects.map(p => p.todo).filter(Boolean), ...cfg.routines.filter(r => r.schedule && r.schedule.kind === 'todo' && r.todoFile).map(r => r.todoFile)])];
   if (!paths.length) return;
   const stamps = await invoke('todo_stamps', {paths}).catch(() => []);
   let redraw = false;
@@ -251,7 +250,7 @@ async function watchTodos() {
     if (ownStamp[p]) { delete ownStamp[p]; for (const r of cfg.routines) if (r.todoFile === p) r.todoStamp = s; return; }
     for (const r of cfg.routines) if (r.todoFile === p && r.schedule && r.schedule.kind === 'todo') r.todoChanged = Date.now();
   });
-  if (redraw) { await Promise.all(cfg.todoFiles.map(f => loadTodo(f.path))); if (settings.view === 'todos') renderView(); }
+  if (redraw) { await Promise.all(cfg.projects.filter(p => p.todo).map(p => loadTodo(p.todo))); if ((settings.view === 'project' || settings.view === 'home') && !typing()) renderView(); }
 }
 
 /* ================= Planning the routines ================= */
@@ -306,9 +305,9 @@ async function planTick() {
 }
 
 /* ================= Routines: templates ================= */
-const TEMPLATES = ['todo', 'bugs', 'builds', 'week', 'notes', 'deps', 'empty'];
+const TEMPLATES = ['todo', 'bugs', 'builds', 'review', 'week', 'deps', 'empty'];
 function fromTemplate(k) {
-  const todoPath = (cfg.todoFiles[0] || {}).path || 'TODO.md';
+  const p = curProject() || cfg.projects[0], todoPath = (p && p.todo) || 'TODO.md';
   const base = {id: uid(), created: Date.now(), name: t(`tpl.${k}`), prompt: t(`tpl.${k}.prompt`, {todo: todoPath}), dirs: [], level: 'read', commands: '',
     web: false, noDelete: true, planOnly: false, maxMinutes: 30, model: '', rules: '', enabled: true, schedule: {kind: 'manual', time: '07:00', day: 0}};
   const over = {
@@ -316,11 +315,13 @@ function fromTemplate(k) {
     bugs: {schedule: {kind: 'daily', time: '18:00', day: 0}},
     builds: {schedule: {kind: 'start', time: '07:00', day: 0}, maxMinutes: 10},
     week: {schedule: {kind: 'weekly', time: '16:00', day: 4}},
-    notes: {level: 'edit', schedule: {kind: 'weekly', time: '17:00', day: 6}},
+    review: {schedule: {kind: 'weekdays', time: '17:30', day: 0}},
     deps: {web: true, schedule: {kind: 'weekly', time: '08:00', day: 0}},
     empty: {prompt: '', name: t('rt.newName')}
   }[k] || {};
-  return {...base, ...over};
+  const r = {...base, ...over};
+  if (p) { r.project = p.id; r.dirs = projDirs(p); }
+  return r;
 }
 function newRoutine() {
   modal(t('rt.newTitle'), `<p class="hint">${esc(t('rt.newHint'))}</p><div class="tpl-grid">${TEMPLATES.map(k =>
@@ -330,29 +331,28 @@ $('#modalBody').addEventListener('click', e => {
   const b = e.target.closest('[data-tpl]');
   if (!b) return;
   const r = fromTemplate(b.dataset.tpl);
-  if (r.schedule.kind === 'todo' || b.dataset.tpl === 'todo') r.todoFile = (cfg.todoFiles[0] || {}).path || '';
-  if (!r.dirs.length && cfg.todo.dirs.length) r.dirs = [...cfg.todo.dirs];
+  if (r.schedule.kind === 'todo' || b.dataset.tpl === 'todo') r.todoFile = ((r.project && projectOf(r.project)) || {}).todo || '';
   cfg.routines.push(r); saveCfg(); closeModal();
   sel = {type: 'routine', id: r.id}; setView('routines');
 });
 
 /* ================= Views ================= */
-const VIEWS = ['inbox', 'todos', 'routines', 'history', 'chats'];
+const VIEWS = ['home', 'project', 'inbox', 'chats', 'routines', 'history'];
 function setView(v) { settings.view = v; full = null; saveSettings(); renderAll(); }
 function renderAll() {
-  renderView(); renderDetails(); updateStatus(); syncTools(); $('#dock').classList.toggle('hidden', !settings.dock || !!full);
+  renderView(); renderDetails(); updateStatus(); syncTools(); renderSide(); $('#dock').classList.toggle('hidden', !settings.dock || !!full);
   const a = document.activeElement;   // the menu of slash commands stays open while the run is redrawn
   if (slash && a && a.dataset.chatIn && a.value.startsWith('/')) slashMenu(a);
 }
 function renderView() {
   const box = $('#view');
   const keep = box.scrollTop, a = document.activeElement, typingIn = a && box.contains(a) && a.dataset.addText;
-  const chatting = a && box.contains(a) && (a.dataset.chatIn || (a.dataset.newChat !== undefined ? '\u0000new' : ''));
+  const chatting = a && box.contains(a) && (a.dataset.chatIn || (a.dataset.newChat !== undefined ? '\u0000new' : '') || (a.dataset.workIn ? '\u0000work' : ''));
   const atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   const caret = typingIn || chatting ? [a.selectionStart, a.selectionEnd] : null;
   if (full && !runOf(full)) full = null;
   box.classList.toggle('full', !!full);
-  box.innerHTML = full ? viewFull(runOf(full)) : {inbox: viewInbox, todos: viewTodos, routines: viewRoutines, history: viewHistory, chats: viewChats}[settings.view]();
+  box.innerHTML = full ? viewFull(runOf(full)) : ({home: viewHome, project: viewProject, inbox: viewInbox, routines: viewRoutines, history: viewHistory, chats: viewChats}[settings.view] || viewHome)();
   box.scrollTop = keep;
   if (full && atEnd && isChat(runOf(full))) box.scrollTop = box.scrollHeight;   // a chat follows its newest message
   if (full) fillSteps();
@@ -362,7 +362,7 @@ function renderView() {
   if (el) { el.focus({preventScroll: true}); el.setSelectionRange(...caret); }
   // The same for the chat box of the full view; it also keeps the height it has grown to.
   const c = box.querySelector('[data-grow]');
-  if (c) { growChat(c); if (chatting && chatting === (c.dataset.chatIn || (c.dataset.newChat !== undefined ? '\u0000new' : ''))) { c.focus({preventScroll: true}); c.setSelectionRange(...caret); } }
+  if (c) { growChat(c); if (chatting && chatting === (c.dataset.chatIn || (c.dataset.newChat !== undefined ? '\u0000new' : '') || (c.dataset.workIn ? '\u0000work' : ''))) { c.focus({preventScroll: true}); c.setSelectionRange(...caret); } }
 }
 const statusBadge = st => `<span class="badge ${({running: 'blue', done: 'ok', needsYou: 'warn', failed: 'red', timeout: 'red'})[st] || ''}">${esc(t('st.' + st))}</span>`;
 const levelBadge = l => `<span class="badge${l === 'publish' ? ' warn' : ''}">${esc(t('lv.' + l))}</span>`;
@@ -399,7 +399,7 @@ function viewInbox() {
   const order = ['approval', 'question', 'problem', 'done'];
   const items = [...data.inbox].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind) || b.created - a.created);
   if (!items.length && !running.length) return h + emptyBig(t('inbox.emptyTitle'), t('inbox.empty'),
-    `<button class="btn-sm primary" data-act="newChat">${esc(t('a.newChat'))}</button><button class="btn-sm" data-act="newTask">${esc(t('a.newTask'))}</button><button class="btn-sm" data-act="viewTodos">${esc(t('a.viewTodos'))}</button><button class="btn-sm" data-act="newRoutine">${esc(t('a.newRoutine'))}</button>`);
+    `<button class="btn-sm primary" data-act="newChat">${esc(t('a.newChat'))}</button><button class="btn-sm" data-act="newTask">${esc(t('a.newTask'))}</button><button class="btn-sm" data-act="viewHome">${esc(t('a.viewHome'))}</button><button class="btn-sm" data-act="newRoutine">${esc(t('a.newRoutine'))}</button>`);
   if (items.length && running.length) h += `<div class="group-h">${esc(t('inbox.forYou'))}</div>`;
   return h + items.map(itemCard).join('');
 }
@@ -427,47 +427,6 @@ function itemCard(it, inFull) {
   }
   return `<div class="pcard ${esc(it.kind)}">${head}${text}${body}</div>`;
 }
-function viewTodos() {
-  const p = cfg.todo;
-  let h = `<div class="view-title"><h1>${esc(t('v.todos'))}</h1><span class="sub">${esc(t('todo.sub'))}</span><span class="flex"></span>
-    <button class="btn-sm" data-act="linkTodo">${esc(t('a.linkTodo'))}</button></div>`;
-  h += `<div class="pcard${sel && sel.type === 'todo' ? ' sel' : ''}" data-todo-profile><div class="it-head"><b>${esc(t('todo.how'))}</b><span class="flex"></span><button class="btn-sm" data-todo-edit>${esc(t('todo.edit'))}</button></div>
-    <div class="meta">${(p.dirs || []).length ? esc(t('todo.howText', {dirs: p.dirs.map(baseName).join(', '), lv: t('lv.' + p.level) + (p.auto ? ' · ' + t('ed.autoShort') : '')})) : esc(t('todo.howNone'))}</div></div>`;
-  if (!cfg.todoFiles.length) return h + emptyBig(t('todo.emptyTitle'), t('todo.empty'), `<button class="btn-sm primary" data-act="linkTodo">${esc(t('a.linkTodo'))}</button>`);
-  for (const f of cfg.todoFiles) {
-    const d = todos[f.path] || {items: []};
-    const open = d.items.filter(i => !i.done).length, pr = profileOf(f.path);
-    h += `<div class="pcard${sel && sel.type === 'list' && sel.id === f.path ? ' sel' : ''}"><h2><span title="${esc(f.path)}">${esc(baseName(f.path))}</span><span class="badge">${esc(tn('todo.openN', open))}</span><span class="flex"></span>
-      <label class="switch" style="margin:0;text-transform:none;letter-spacing:0;font-weight:400"><input type="checkbox" data-tick="${esc(f.path)}"${f.tick ? ' checked' : ''}><span></span>${esc(t('todo.tick'))}</label>
-      <button class="btn-sm" data-doall="${esc(f.path)}"${open ? '' : ' disabled'}>${esc(t('todo.doAll'))}</button>
-      <button class="btn-sm" data-list-edit="${esc(f.path)}">${esc(t('todo.listEdit'))}</button>
-      <button class="btn-sm" data-reveal="${esc(f.path)}">${esc(t('ui.show'))}</button><button class="btn-sm" data-unlink="${esc(f.path)}">${esc(t('todo.unlink'))}</button></h2>
-      <div class="meta" style="margin:-2px 0 6px">${esc(f.own ? t('todo.ownWhere') : t('todo.allWhere'))}: ${esc((pr.dirs || []).map(baseName).join(', ') || t('rt.noDirsShort'))} · ${esc(t('lv.' + pr.level))}${pr.auto ? ' · ' + esc(t('ed.autoShort')) : ''}</div>`;
-    if (d.error) h += `<div class="empty-s" style="color:var(--danger)">${esc(d.error)}</div>`;
-    else if (!d.items.length) h += `<div class="empty-s">${esc(t('todo.noItems'))}</div>`;
-    const shown = itemsShown(d.items, doneAll[f.path]);
-    let sect = null;
-    for (const it of shown.items) {
-      if (it.section !== sect) { sect = it.section; if (sect) h += `<div class="group-h">${esc(sect)}</div>`; }
-      const r = runForItem(f.path, it.text), st = r ? (stOf(r)) : '';
-      h += `<div class="row d${Math.min(2, it.depth)}${it.done ? ' done' : ''}${r && sel && sel.id === r.id ? ' sel' : ''}"${r ? ` data-run="${esc(r.id)}"` : ''}>
-        <input type="checkbox" disabled${it.done ? ' checked' : ''}><span class="grow" title="${esc(it.text)}">${esc(it.text)}</span>
-        ${st ? statusBadge(st) : ''}
-        ${!it.done && st !== 'running' ? `<button class="btn-sm${st ? '' : ' primary'}" data-doitem="${esc(f.path)}" data-line="${it.line}">${esc(st ? t('todo.again') : t('todo.do'))}</button>` : ''}</div>`;
-    }
-    if (shown.hidden || (doneAll[f.path] && d.items.filter(i => i.done).length > DONE_SHOWN))
-      h += `<div class="done-more"><button class="btn-sm" data-done-all="${esc(f.path)}">${esc(shown.hidden ? tn('todo.doneMore', shown.hidden) : t('todo.doneLess', {n: DONE_SHOWN}))}</button></div>`;
-    if (!d.error) {
-      const secs = d.sections || [], cur = addSection(f.path);
-      const opts = (d.items.some(i => !i.section) || !secs.length ? [''] : []).concat(secs);
-      h += `<div class="todo-add"><input class="field-in" data-add-text="${esc(f.path)}" value="${esc(addDraft[f.path] || '')}" placeholder="${esc(t('todo.addPh'))}">
-        ${opts.length > 1 ? `<select data-add-sect="${esc(f.path)}" title="${esc(t('todo.addWhere'))}">${opts.map(s => `<option value="${esc(s)}"${s === cur ? ' selected' : ''}>${esc(s || t('todo.addTop'))}</option>`).join('')}</select>` : ''}
-        <button class="btn-sm" data-add="${esc(f.path)}" title="Enter">${esc(t('todo.add'))}</button><button class="btn-sm" data-add-go="${esc(f.path)}" title="${esc(t('todo.addGoHint'))}">${esc(t('todo.addGo'))}</button></div>`;
-    }
-    h += '</div>';
-  }
-  return h;
-}
 function scheduleText(r) {
   const s = r.schedule || {};
   if (s.kind === 'daily') return t('sch.dailyAt', {t: s.time});
@@ -486,7 +445,7 @@ function viewRoutines() {
       <div class="it-head"><label class="switch" style="margin:0" title="${esc(t('rt.enabled'))}"><input type="checkbox" data-enable="${esc(r.id)}"${r.enabled ? ' checked' : ''}><span></span></label>
         <b>${esc(r.name || t('rt.newName'))}</b>${levelBadge(r.level)}${r.planOnly ? `<span class="badge">${esc(t('rt.planOnly'))}</span>` : r.auto ? `<span class="badge blue">${esc(t('ed.autoShort'))}</span>` : ''}<span class="flex"></span>
         ${run ? `<button class="btn-sm" data-stop-routine="${esc(r.id)}">${esc(t('run.stop'))}</button>` : `<button class="btn-sm primary" data-start="${esc(r.id)}">${esc(t('rt.start'))}</button>`}</div>
-      <div class="meta">${esc(scheduleText(r))}${next ? ' · ' + esc(t('rt.next', {w: fmtWhen(next)})) : ''} · ${esc((r.dirs || []).map(baseName).join(', ') || t('rt.noDirsShort'))}</div>
+      <div class="meta">${esc(scheduleText(r))}${next ? ' · ' + esc(t('rt.next', {w: fmtWhen(next)})) : ''} · ${esc(r.project && projectOf(r.project) ? projectOf(r.project).name : (r.dirs || []).map(baseName).join(', ') || t('rt.noDirsShort'))}</div>
       ${last ? `<div class="meta" style="margin-top:4px">${statusBadge(stOf(last))} ${esc(t('rt.last', {w: fmtWhen(last.started)}))}</div>` : ''}</div>`;
   }).join('');
 }
@@ -505,7 +464,7 @@ function viewHistory() {
     const st = stOf(r), files = r.repos.reduce((n, x) => n + x.files.length, 0), commits = r.repos.reduce((n, x) => n + x.commits.length, 0);
     h += `<div class="row${sel && sel.id === r.id ? ' sel' : ''}" data-run="${esc(r.id)}"><span class="dot ${esc(st)}"></span>
       <span class="meta" style="width:44px">${esc(new Date(r.started).toLocaleTimeString(locale(), {hour: '2-digit', minute: '2-digit'}))}</span>
-      <span class="grow">${r.spec.continues ? '↳ ' : ''}${r.spec.origin ? `<span class="badge">${esc(r.spec.origin.app)}</span> ` : r.spec.chat ? `<span class="badge">${esc(t('chat.badge'))}</span> ` : ''}${esc(r.spec.title)}</span>
+      <span class="grow">${r.spec.continues ? '↳ ' : ''}${r.spec.project && projectOf(r.spec.project) ? `<span class="badge" style="color:${esc(projectOf(r.spec.project).color)}">${esc(projectOf(r.spec.project).name)}</span> ` : r.spec.origin ? `<span class="badge">${esc(r.spec.origin.app)}</span> ` : r.spec.chat ? `<span class="badge">${esc(t('chat.badge'))}</span> ` : ''}${esc(r.spec.title)}</span>
       ${commits ? `<span class="meta">${esc(tn('run.commitsN', commits))}</span>` : files ? `<span class="meta">${esc(tn('run.filesN', files))}</span>` : ''}
       <span class="meta">${esc(fmtDur((r.ended || Date.now()) - r.started))}</span>${statusBadge(st)}</div>`;
   }
@@ -644,8 +603,18 @@ function renderDetails() {
   logFor = null;
   if (sel && sel.type === 'run' && runOf(sel.id)) return runDetails(box, runOf(sel.id));
   if (sel && sel.type === 'routine' && routineOf(sel.id)) return routineEditor(box, routineOf(sel.id));
-  if (sel && sel.type === 'todo') return profileEditor(box);
-  if (sel && sel.type === 'list' && listOf(sel.id)) return listEditor(box, listOf(sel.id));
+  const p = curProject();
+  if (p) {
+    const i = info[p.id] || {};
+    box.innerHTML = `<div class="it-head">${tile(p)}<b>${esc(p.name)}</b></div>
+      <div class="kv"><span>${esc(t('det.rights'))}</span><b>${esc(t('lv.' + p.level))}${p.auto ? ' · ' + esc(t('ed.autoShort')) : ''}</b></div>
+      <div class="kv"><span>${esc(t('p.allowed'))}</span><b title="${esc(p.commands || '')}">${esc(p.commands || '—')}</b></div>
+      <div class="kv"><span>${esc(t('ed.web'))}</span><b>${esc(t(p.web ? 'ui.yes' : 'ui.no'))}</b></div>
+      ${i.git ? `<div class="kv"><span>${esc(t('p.remote'))}</span><b title="${esc(i.git.remote)}">${esc(i.git.remote.replace(/^https:\/\/github.com\//, '') || '—')}</b></div>` : ''}
+      <p><button class="btn-sm" data-ptab="setup">${esc(t('p.editRights'))}</button></p>
+      <div class="group-h">${esc(t('det.levels'))}</div>${LEVELS.map(l => `<div class="kv"><span>${esc(t('lv.' + l))}</span></div><div class="meta" style="margin:-2px 0 6px">${esc(t('lv.' + l + '.hint'))}</div>`).join('')}`;
+    return;
+  }
   box.innerHTML = `<div class="empty-s">${esc(t('det.none'))}</div>
     <div class="group-h">${esc(t('det.levels'))}</div>${LEVELS.map(l => `<div class="kv"><span>${esc(t('lv.' + l))}</span></div><div class="meta" style="margin:-2px 0 6px">${esc(t('lv.' + l + '.hint'))}</div>`).join('')}`;
 }
@@ -852,8 +821,8 @@ function dirsField(dirs, key) {
   return `<div class="chips">${dirs.map((d, i) => `<span class="fchip" title="${esc(d)}"><span>&lrm;${esc(d)}&lrm;</span><button class="x" data-dir-del="${key}|${i}">&#10005;</button></span>`).join('')}
     <button class="btn-sm" data-dir-add="${key}">${esc(t('ed.addDir'))}</button></div>`;
 }
-function rightsFields(o, key) {
-  return `<div class="ed-field"><label>${esc(t('ed.dirs'))}</label>${dirsField(o.dirs || [], key)}<div class="hint">${esc(t('ed.dirsHint'))}</div></div>
+function rightsFields(o, key, noDirs) {
+  return `${noDirs ? '' : `<div class="ed-field"><label>${esc(t('ed.dirs'))}</label>${dirsField(o.dirs || [], key)}<div class="hint">${esc(t('ed.dirsHint'))}</div></div>`}
     <div class="ed-field"><label>${esc(t('ed.level'))}</label><div class="lvl">${LEVELS.map((l, i) => `<button class="${o.level === l ? 'on l' + i : ''}" data-level="${key}|${l}">${esc(t('lv.' + l + '.short'))}</button>`).join('')}</div>
       <div class="hint">${esc(t('lv.' + o.level + '.hint'))}</div></div>
     <label class="switch"><input type="checkbox" data-sw="${key}|auto"${o.auto ? ' checked' : ''}><span></span>${esc(t('ed.auto'))}</label>
@@ -869,74 +838,69 @@ function rightsFields(o, key) {
 function routineEditor(box, r) {
   const s = r.schedule || (r.schedule = {kind: 'manual', time: '07:00', day: 0});
   const key = 'r:' + r.id;
+  const rp = r.project && projectOf(r.project);
   box.innerHTML = `<div class="ed-field"><label>${esc(t('ed.name'))}</label><input class="field-in" data-f="${key}|name" value="${esc(r.name)}"></div>
+    <div class="ed-field"><label>${esc(t('rt.project'))}</label><select data-f="${key}|project"><option value="">${esc(t('rt.noProject'))}</option>${cfg.projects.map(p => `<option value="${esc(p.id)}"${r.project === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+      <div class="hint">${esc(t(rp ? 'rt.projectHint' : 'rt.noProjectHint'))}</div></div>
     <div class="ed-field"><label>${esc(t('ed.prompt'))}</label><textarea data-f="${key}|prompt" placeholder="${esc(t('ed.promptPh'))}">${esc(r.prompt)}</textarea></div>
     <div class="ed-field"><label>${esc(t('ed.when'))}</label><select data-sched="kind">${SCHEDULES.map(k => `<option value="${k}"${s.kind === k ? ' selected' : ''}>${esc(t('sch.' + k))}</option>`).join('')}</select>
       ${['daily', 'weekdays', 'weekly'].includes(s.kind) ? `<div class="two" style="margin-top:6px">${s.kind === 'weekly' ? `<select data-sched="day">${[0, 1, 2, 3, 4, 5, 6].map(d => `<option value="${d}"${+s.day === d ? ' selected' : ''}>${esc(dayName(d))}</option>`).join('')}</select>` : '<span></span>'}
         <input type="time" data-sched="time" value="${esc(s.time || '07:00')}"></div>` : ''}
-      ${s.kind === 'todo' ? `<select data-f="${key}|todoFile" style="margin-top:6px"><option value="">${esc(t('ed.pickTodo'))}</option>${cfg.todoFiles.map(f => `<option value="${esc(f.path)}"${r.todoFile === f.path ? ' selected' : ''}>${esc(baseName(f.path))}</option>`).join('')}</select>` : ''}
+      ${s.kind === 'todo' ? `<select data-f="${key}|todoFile" style="margin-top:6px"><option value="">${esc(t('ed.pickTodo'))}</option>${cfg.projects.filter(p => p.todo).map(p => `<option value="${esc(p.todo)}"${r.todoFile === p.todo ? ' selected' : ''}>${esc(p.name)} · ${esc(baseName(p.todo))}</option>`).join('')}</select>` : ''}
       <div class="hint">${esc(t('sch.' + s.kind + '.hint'))}</div></div>
-    ${rightsFields(r, key)}
+    ${rightsFields(r, key, !!rp)}
     <div class="ed-field"><label>${esc(t('ed.rules'))}</label><textarea class="small" data-f="${key}|rules" placeholder="${esc(t('ed.rulesPh'))}">${esc(r.rules || '')}</textarea></div>
     <div class="d-actions"><button class="btn-sm primary" data-start="${esc(r.id)}"${routineRunning(r.id) ? ' disabled' : ''}>${esc(t('rt.start'))}</button>
       <button class="btn-sm" data-dup="${esc(r.id)}">${esc(t('rt.dup'))}</button><button class="btn-sm" data-del-routine="${esc(r.id)}" style="color:var(--danger)">${esc(t('rt.del'))}</button></div>`;
 }
-function profileEditor(box) {
-  const p = cfg.todo;
-  box.innerHTML = `<p class="meta" style="margin-top:0">${esc(t('todo.profileHint'))}</p>${rightsFields(p, 'todo')}
-    <div class="ed-field"><label>${esc(t('todo.extra'))}</label><textarea class="small" data-f="todo|prompt" placeholder="${esc(t('todo.extraPh'))}">${esc(p.prompt || '')}</textarea></div>`;
-}
-function listEditor(box, f) {
-  const key = 'l:' + cfg.todoFiles.indexOf(f);
-  box.innerHTML = `<div class="it-head"><b title="${esc(f.path)}">${esc(baseName(f.path))}</b></div>
-    <label class="switch"><input type="checkbox" data-own="${esc(f.path)}"${f.own ? ' checked' : ''}><span></span>${esc(t('todo.own'))}</label>
-    <p class="meta">${esc(f.own ? t('todo.ownHint') : t('todo.ownOff'))}</p>
-    ${f.own ? `${rightsFields(f, key)}<div class="ed-field"><label>${esc(t('todo.extra'))}</label><textarea class="small" data-f="${key}|prompt" placeholder="${esc(t('todo.extraPh'))}">${esc(f.prompt || '')}</textarea></div>`
-      : `<p><button class="btn-sm" data-todo-general>${esc(t('todo.editGeneral'))}</button></p>`}`;
-}
-function target(key) { return key === 'todo' ? cfg.todo : key.startsWith('l:') ? cfg.todoFiles[+key.slice(2)] : routineOf(key.slice(2)); }
-$('#details').addEventListener('input', e => {
+function target(key) { return key === 'task' ? lastTask : key.startsWith('p:') ? projectOf(key.slice(2)) : routineOf(key.slice(2)); }
+/* The fields of a routine (panel) and of a project's setup (main area): data-f, data-sw, data-level, folders. */
+function fieldInput(e) {
   const d = e.target.dataset;
   if (d.f) {
     const [key, f] = d.f.split('|'), o = target(key);
-    if (!o) return;
+    if (!o || key === 'task') return;
     o[f] = f === 'maxMinutes' ? Math.max(0, +e.target.value || 0) : e.target.value;
     saveCfg();
-    if (f === 'name' || f === 'todoFile') renderView();
+    if (f === 'name' || f === 'todoFile') { if (key.startsWith('p:')) renderSide(); else renderView(); }
   }
-});
+}
+$('#details').addEventListener('input', fieldInput);
 $('#details').addEventListener('change', e => {
   const d = e.target.dataset;
-  if (d.own) {
-    const f = listOf(d.own);
-    // The list's own settings start as a copy of the ones for all lists.
-    if (e.target.checked && !f.dirs) Object.assign(f, JSON.parse(JSON.stringify({dirs: cfg.todo.dirs, level: cfg.todo.level, commands: cfg.todo.commands, web: cfg.todo.web,
-      noDelete: cfg.todo.noDelete, auto: cfg.todo.auto, maxMinutes: cfg.todo.maxMinutes, model: cfg.todo.model, prompt: cfg.todo.prompt})));
-    f.own = e.target.checked; saveCfg(); renderAll(); return;
-  }
   if (d.sw) { const [key, f] = d.sw.split('|'), o = target(key); if (o) { o[f] = e.target.checked; saveCfg(); renderAll(); } }
   if (d.sched && sel && sel.type === 'routine') {
     const r = routineOf(sel.id);
     r.schedule[d.sched] = d.sched === 'day' ? +e.target.value : e.target.value;
-    if (d.sched === 'kind' && e.target.value === 'todo' && !r.todoFile) r.todoFile = (cfg.todoFiles[0] || {}).path || '';
+    if (d.sched === 'kind' && e.target.value === 'todo' && !r.todoFile) r.todoFile = ((r.project && projectOf(r.project)) || cfg.projects.find(p => p.todo) || {}).todo || '';
     if (d.sched === 'kind' || d.sched === 'time' || d.sched === 'day') r.created = Math.max(r.created || 0, Date.now() - 1);   // a new time counts from now on
     saveCfg(); renderAll();
   }
-  if (d.f && e.target.tagName === 'SELECT') renderAll();
+  if (d.f && e.target.tagName === 'SELECT') {
+    const [key, f] = d.f.split('|'), r = key.startsWith('r:') && routineOf(key.slice(2));
+    if (r && f === 'project') { const p = projectOf(r.project); if (p) r.dirs = projDirs(p); if (r.schedule && r.schedule.kind === 'todo' && p && p.todo) r.todoFile = p.todo; saveCfg(); }
+    renderAll();
+  }
 });
+/* A level, a folder added or taken away — for routines and projects. Projects keep their other folders in extraDirs. */
+async function fieldClick(d) {
+  if (d.level) { const [key, l] = d.level.split('|'); target(key).level = l; saveCfg(); renderAll(); return true; }
+  const dirsKey = key => key.startsWith('p:') ? 'extraDirs' : 'dirs';
+  if (d.dirAdd) {
+    if (!invoke) { toast(t('ui.appOnly')); return true; }
+    const p = await invoke('pick_folder');
+    if (p) { const o = target(d.dirAdd), k = dirsKey(d.dirAdd); o[k] = [...new Set([...(o[k] || []), p])]; saveCfg(); renderAll(); }
+    return true;
+  }
+  if (d.dirDel) { const [key, i] = d.dirDel.split('|'); target(key)[dirsKey(key)].splice(+i, 1); saveCfg(); renderAll(); return true; }
+  return false;
+}
 $('#details').addEventListener('click', async e => {
   const b = e.target.closest('button,[data-reveal],a');
   if (!b) return;
   const d = b.dataset;
-  if (d.level) { const [key, l] = d.level.split('|'); target(key).level = l; saveCfg(); renderAll(); return; }
-  if (d.todoGeneral !== undefined) { sel = {type: 'todo'}; renderAll(); return; }
-  if (d.dirAdd) {
-    if (!invoke) return toast(t('ui.appOnly'));
-    const p = await invoke('pick_folder');
-    if (p) { const o = target(d.dirAdd); o.dirs = [...new Set([...(o.dirs || []), p])]; saveCfg(); renderAll(); }
-    return;
-  }
-  if (d.dirDel) { const [key, i] = d.dirDel.split('|'); target(key).dirs.splice(+i, 1); saveCfg(); renderAll(); return; }
+  if (await fieldClick(d)) return;
+  if (d.ptab) { settings.ptab = d.ptab; saveSettings(); renderAll(); return; }
   if (d.dup) { const r = routineOf(d.dup), c = {...JSON.parse(JSON.stringify(r)), id: uid(), name: r.name + ' ' + t('rt.copy'), created: Date.now(), lastRun: 0}; cfg.routines.push(c); saveCfg(); sel = {type: 'routine', id: c.id}; renderAll(); return; }
   if (d.delRoutine) {
     const r = routineOf(d.delRoutine);
@@ -979,10 +943,12 @@ async function showDiff(id) {
 
 /* ================= View clicks ================= */
 $('#view').addEventListener('click', async e => {
-  const b = e.target.closest('button,[data-run],[data-routine],[data-todo-profile],[data-reveal],[data-chat-open],a');
+  const b = e.target.closest('button,[data-run],[data-routine],[data-reveal],[data-chat-open],[data-proj],a');
   if (!b) return;
   const d = b.dataset;
   if ((b.tagName === 'BUTTON' || b.tagName === 'A' || d.reveal) && await common(b, e)) return;
+  if (await fieldClick(d)) return;
+  if (await projectClick(b, e)) return;
   if (d.fullClose !== undefined) return closeFull();
   if (d.chatOpen) return openFull(d.chatOpen);
   if (d.newChatGo !== undefined) return startChat();
@@ -1016,23 +982,25 @@ $('#view').addEventListener('click', async e => {
   if (d.doneAll) { doneAll[d.doneAll] = !doneAll[d.doneAll]; return renderView(); }
   if (d.add) return addItem(d.add, false);
   if (d.addGo) return addItem(d.addGo, true);
-  if (d.unlink) { cfg.todoFiles = cfg.todoFiles.filter(f => f.path !== d.unlink); if (sel && sel.type === 'list' && sel.id === d.unlink) sel = null; saveCfg(); return renderAll(); }
-  if (d.listEdit) { sel = {type: 'list', id: d.listEdit}; return renderAll(); }
-  if (d.todoEdit !== undefined || d.todoProfile !== undefined) { sel = {type: 'todo'}; return renderAll(); }
   if (d.run) { sel = {type: 'run', id: d.run}; return renderAll(); }
   if (d.routine) { sel = {type: 'routine', id: d.routine}; return renderAll(); }
 });
 $('#view').addEventListener('change', e => {
   const d = e.target.dataset;
-  if (d.tick) { const f = cfg.todoFiles.find(x => x.path === d.tick); f.tick = e.target.checked; saveCfg(); }
+  if (d.ptick) { const p = projectOf(d.ptick); if (p) { p.tick = e.target.checked; saveCfg(); } }
+  if (d.sw) { const [key, f] = d.sw.split('|'), o = target(key); if (o) { o[f] = e.target.checked; saveCfg(); renderAll(); } }
+  if (d.f && e.target.tagName === 'SELECT') { fieldInput(e); renderAll(); }
   if (d.chatSet) { cfg.chat[d.chatSet] = e.target.value; saveCfg(); renderView(); }
   if (d.addSect !== undefined) { const f = listOf(d.addSect); if (f) { f.addSection = e.target.value; saveCfg(); } }
   if (d.enable) { const r = routineOf(d.enable); r.enabled = e.target.checked; if (r.enabled) r.created = Math.max(r.created || 0, Date.now() - 1); saveCfg(); renderAll(); }
 });
 $('#view').addEventListener('input', e => {
+  if (e.target.dataset.f && e.target.tagName !== 'SELECT') fieldInput(e);
+  if (e.target.dataset.workIn) { const id = e.target.dataset.workIn; (pDraft[id] || (pDraft[id] = {work: 'feature'})).text = e.target.value; growChat(e.target); const b = $(`[data-work-go="${CSS.escape(id)}"]`); if (b) b.disabled = !e.target.value.trim(); }
   const p = e.target.dataset.addText; if (p !== undefined) addDraft[p] = e.target.value;
   if (e.target.dataset.newChat !== undefined) { newChatDraft = e.target.value; growChat(e.target); const b = $('[data-new-chat-go]'); if (b) b.disabled = !newChatDraft.trim(); }
 });
+$('#side').addEventListener('click', e => { const b = e.target.closest('[data-proj]'); if (b) openProject(b.dataset.proj); });
 $('#view').addEventListener('dblclick', e => {
   const b = e.target.closest('[data-run]');
   if (b && !e.target.closest('button,input,select,textarea,a')) openFull(b.dataset.run);
@@ -1080,6 +1048,8 @@ document.addEventListener('keydown', e => {
 }, true);
 $('#view').addEventListener('keydown', e => {
   if (e.target.dataset && e.target.dataset.newChat !== undefined && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.stopPropagation(); return startChat(); }
+  if (e.target.dataset && e.target.dataset.workIn && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); e.stopPropagation(); return startWork(e.target.dataset.workIn); }
+  if (e.target.id === 'cmdNew' && e.key === 'Enter') { e.preventDefault(); const b = $('[data-cmd-once]'); if (b) b.click(); return; }
   const p = e.target.dataset && e.target.dataset.addText;
   if (p && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); return addItem(p, e.metaKey || e.ctrlKey); }
   if (p && e.key === 'Escape' && e.target.value) { e.stopPropagation(); e.target.value = ''; delete addDraft[p]; return; }
@@ -1090,7 +1060,9 @@ $('#view').addEventListener('keydown', e => {
 /* ================= New task ================= */
 let lastTask = null;
 function newTask() {
-  const o = lastTask || {title: '', prompt: '', dirs: [...(cfg.todo.dirs || [])], level: 'edit', commands: '', web: false, noDelete: true, planOnly: false, maxMinutes: 30, model: ''};
+  const cp = curProject();
+  if (cp && !full) { settings.ptab = 'overview'; renderView(); const el = $('#workIn'); if (el) el.focus(); return; }
+  const o = lastTask || {title: '', prompt: '', dirs: cp ? projDirs(cp) : [], level: 'edit', commands: '', web: false, noDelete: true, planOnly: false, maxMinutes: 30, model: ''};
   lastTask = o;
   modal(t('task.title'), `<div class="task-form"><div class="ed-field"><label>${esc(t('task.what'))}</label><textarea id="taskPrompt" placeholder="${esc(t('task.whatPh'))}">${esc(o.prompt)}</textarea></div>
     <div id="taskRights"></div></div>`);
@@ -1147,9 +1119,10 @@ function updateStatus() {
     : st && st.loggedIn ? t('cl.ok', {who: st.email || st.account || st.orgName || 'Claude'}) : t('cl.signIn');
   const stop = $('#stopAll'); if (stop) stop.disabled = !run;
   const c = $('#toolInboxCount'); if (c) { c.textContent = need; c.hidden = !need; }
-  $('#ctxBar').innerHTML = run ? esc(t('ctx.running', {n: run})) : '';
+  const cp = curProject(), ci = cp && info[cp.id];
+  $('#ctxBar').innerHTML = cp ? `${tile(cp)}<b class="ctx-name">${esc(cp.name)}</b>${ci && ci.git ? `<span>⎇ ${esc(ci.git.branch)}</span>` : ''}${run ? '<span>· ' + esc(t('ctx.running', {n: run})) + '</span>' : ''}` : run ? esc(t('ctx.running', {n: run})) : '';
 }
-function syncTools() { $$('#tools .view').forEach(b => b.classList.toggle('active', b.dataset.act === 'view' + settings.view[0].toUpperCase() + settings.view.slice(1))); syncDisabled(); }
+function syncTools() { syncDisabled(); }
 
 /* ================= Claude Code: where, sign-in ================= */
 async function checkClaude() {
@@ -1177,8 +1150,20 @@ listen('login-output', e => {
 listen('login-done', e => { loginBusy = false; toast(e.payload ? t('cl.loginOk') : t('cl.loginFail')); checkClaude(); checkCodex(); if (settingsOpen) renderSettings(); });
 
 /* ================= Menus, toolbars ================= */
+/* A command of the project shown, by its kind (build, test, run): Agent Studio runs it itself. */
+function projCmd(kind) {
+  const p = curProject(); if (!p) return toast(t('p.pickFirst'));
+  const c = allCmds(p, info[p.id] || {}).find(x => x.kind === kind);
+  if (!c) { toast(t('cmd.none', {k: t('cmd.' + kind)})); return openProject(p.id, 'commands'); }
+  runJob(p, c.cmd);
+}
 const A = {
-  newTask, newRoutine, linkTodo, stopAll,
+  newTask, newRoutine, linkTodo, stopAll, newApp, addProject: () => addProject(),
+  runBuild: () => projCmd('build'), runTest: () => projCmd('test'), runApp: () => projCmd('run'),
+  projOverview: () => { const p = curProject(); if (p) openProject(p.id, 'overview'); }, projTasks: () => { const p = curProject(); if (p) openProject(p.id, 'tasks'); },
+  projCommands: () => { const p = curProject(); if (p) openProject(p.id, 'commands'); }, projChanges: () => { const p = curProject(); if (p) openProject(p.id, 'changes'); },
+  projSetup: () => { const p = curProject(); if (p) openProject(p.id, 'setup'); },
+  projReview: () => { const p = curProject(); if (p) changeWork(p, 'review'); },
   newChat: () => {
     if (full) full = null;
     if (settings.view !== 'chats') setView('chats'); else renderAll();
@@ -1186,14 +1171,15 @@ const A = {
   },
   openFull: () => { if (full) closeFull(); else if (sel && sel.type === 'run') openFull(sel.id); },
   newTodo: () => {
-    if (!cfg.todoFiles.length) return linkTodo();
-    if (settings.view !== 'todos') setView('todos');
+    const p = curProject() || cfg.projects.find(x => x.todo);
+    if (!p) return toast(t('p.pickFirst'));
+    openProject(p.id, 'tasks');
     const el = $('[data-add-text]'); if (el) { el.focus(); el.scrollIntoView({block: 'nearest'}); }
   },
   runSel: () => { if (sel && sel.type === 'routine') startRoutine(routineOf(sel.id)); else if (sel && sel.type === 'run' && runOf(sel.id)) startRun({...firstOf(runOf(sel.id)).spec, resume: null, continues: null, allowOnce: []}); },
   dismissDone: async () => { const ids = data.inbox.filter(i => i.kind === 'done' || i.kind === 'problem').map(i => i.id); if (ids.length) { await invoke('inbox_dismiss', {ids}); refresh(); } },
   clearHistory: async () => { if (await ask(t('a.clearHistory'), t('hist.clearAsk'), t('a.clearHistory'))) { await invoke('runs_clear'); sel = null; refresh(); } },
-  viewInbox: () => setView('inbox'), viewTodos: () => setView('todos'), viewRoutines: () => setView('routines'), viewHistory: () => setView('history'), viewChats: () => setView('chats'),
+  viewHome: () => setView('home'), viewInbox: () => setView('inbox'), viewRoutines: () => setView('routines'), viewHistory: () => setView('history'), viewChats: () => setView('chats'),
   togglePanels: () => { settings.dock = !settings.dock; applySettings(); },
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },
   settings: () => openSettings(), claudeSettings: () => openSettings('claude'), controlSettings: () => openSettings('control'),
@@ -1214,9 +1200,10 @@ const A = {
 };
 // Menu items: [action, shortcut, checked(), fixed]; '-' is a separator, '#key' a section label (as in every Studio app).
 const MENUS = [
-  ['agent', [['newChat', 'Ctrl+K'], ['newTask', 'Ctrl+N'], ['newRoutine', 'Ctrl+Shift+N'], ['linkTodo', 'Ctrl+L'], ['newTodo', 'Ctrl+T'], '-', ['runSel', 'Ctrl+R'], ['stopAll', 'Ctrl+.'], '-', ['dismissDone'], ['clearHistory']]],
-  ['view', [['viewInbox', 'Alt+1', () => settings.view === 'inbox'], ['viewTodos', 'Alt+2', () => settings.view === 'todos'], ['viewRoutines', 'Alt+3', () => settings.view === 'routines'],
-    ['viewHistory', 'Alt+4', () => settings.view === 'history'], ['viewChats', 'Alt+5', () => settings.view === 'chats'], '-', ['openFull', 'Alt+Enter', () => !!full], ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
+  ['agent', [['newApp', 'Ctrl+Shift+A'], ['addProject', 'Ctrl+O'], '-', ['newTask', 'Ctrl+N'], ['newChat', 'Ctrl+K'], ['newRoutine', 'Ctrl+Shift+N'], ['newTodo', 'Ctrl+T'], ['linkTodo', 'Ctrl+L'], '-', ['runSel', 'Ctrl+R'], ['stopAll', 'Ctrl+.'], '-', ['dismissDone'], ['clearHistory']]],
+  ['project', [['runBuild', 'Ctrl+B'], ['runTest', 'Ctrl+Shift+T'], ['runApp', 'Ctrl+Shift+R'], '-', ['projReview'], '-', ['projOverview', 'Ctrl+1'], ['projTasks', 'Ctrl+2'], ['projCommands', 'Ctrl+3'], ['projChanges', 'Ctrl+4'], ['projSetup', 'Ctrl+5']]],
+  ['view', [['viewHome', 'Alt+1', () => settings.view === 'home'], ['viewInbox', 'Alt+2', () => settings.view === 'inbox'], ['viewChats', 'Alt+3', () => settings.view === 'chats'],
+    ['viewRoutines', 'Alt+4', () => settings.view === 'routines'], ['viewHistory', 'Alt+5', () => settings.view === 'history'], '-', ['openFull', 'Alt+Enter', () => !!full], ['togglePanels', 'Ctrl+\\', () => settings.dock], ['toggleAutoHide', null, () => settings.autoHide]]],
   ['settings', [['settings', 'Ctrl+,'], ['claudeSettings'], ['controlSettings'], '-', '#menu.language',
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
     '-', '#menu.theme',
@@ -1225,7 +1212,8 @@ const MENUS = [
   ['help', [['shortcuts', 'F1'], '-', ['about']]]
 ];
 const allowed = act => (act !== 'stopAll' || data.running.length > 0) && (act !== 'openFull' || !!full || !!(sel && sel.type === 'run' && runOf(sel.id))) && (act !== 'runSel' || !!(sel && (sel.type === 'routine' || sel.type === 'run')))
-  && (act !== 'dismissDone' || data.inbox.some(i => i.kind === 'done' || i.kind === 'problem')) && (act !== 'clearHistory' || data.runs.length > 0);
+  && (act !== 'dismissDone' || data.inbox.some(i => i.kind === 'done' || i.kind === 'problem')) && (act !== 'clearHistory' || data.runs.length > 0)
+  && (!/^(runBuild|runTest|runApp|proj[A-Z])/.test(act) || !!curProject());
 function run(act) { if (A[act] && allowed(act)) A[act](); }
 function syncDisabled() { $$('[data-act]').forEach(b => b.disabled = !allowed(b.dataset.act)); }
 const KEYMAP = {};
@@ -1267,6 +1255,11 @@ const tip = act => t('a.' + act) + (keyOf(act) ? ` (${fmtKey(keyOf(act))})` : ''
 
 const SV = p => `<svg viewBox="0 0 24 24">${p}</svg>`;
 const ICONS = {
+  home: SV('<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>'),
+  spark: SV('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/>'),
+  folder: SV('<path d="M3 6.5a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+  build: SV('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/>'),
+  test: SV('<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/>'),
   inbox: SV('<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/>'),
   todos: SV('<path d="m4 7 2 2 4-4M4 17l2 2 4-4M13 7h8M13 17h8"/>'),
   routines: SV('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5M12 7v5l3 2"/>'),
@@ -1288,17 +1281,13 @@ function makeBtn(act, html, cls = '') {
 }
 function buildToolbars() {
   const fill = (id, list) => { const box = $(id); box.innerHTML = ''; list.forEach(([a, i]) => box.append(makeBtn(a, i))); };
-  fill('#fileBtns', [['newChat', ICONS.chat], ['newTask', ICONS.task], ['newRoutine', ICONS.routine], ['linkTodo', ICONS.link], ['runSel', ICONS.play]]);
+  fill('#fileBtns', [['newApp', ICONS.spark], ['addProject', ICONS.folder], ['newTask', ICONS.task], ['newChat', ICONS.chat], ['newRoutine', ICONS.routine]]);
+  fill('#projBtns', [['runBuild', ICONS.build], ['runTest', ICONS.test], ['runApp', ICONS.play]]);
   fill('#viewBtns', [['togglePanels', ICONS.panel], ['settings', ICONS.gear], ['shortcuts', ICONS.help]]);
   const stop = Object.assign(document.createElement('button'), {className: 'stop-btn', id: 'stopAll', textContent: t('ui.stopAll'), title: tip('stopAll')});
   stop.dataset.act = 'stopAll';
   $('#viewBtns').prepend(stop);
-  const tools = $('#tools'); tools.innerHTML = '';
-  VIEWS.forEach(v => {
-    const b = makeBtn('view' + v[0].toUpperCase() + v.slice(1), ICONS[v], 'view');
-    if (v === 'inbox') b.insertAdjacentHTML('beforeend', '<span class="count" id="toolInboxCount" hidden></span>');
-    tools.append(b);
-  });
+  renderSide();
   $$('[data-act="togglePanels"]').forEach(b => b.classList.toggle('active', settings.dock));
   syncDisabled();
 }
@@ -1469,14 +1458,16 @@ window.addEventListener('keydown', e => {
 {
   const item = act => ({id: act, label: t('a.' + act), accel: keyOf(act) || null, enabled: allowed(act)});
   Native.setProvider(e => {
-    if (e.target.closest('#view') && !e.target.closest('input,textarea')) return [item('newChat'), item('newTask'), item('newRoutine'), item('linkTodo'), null, item('stopAll')];
+    if (e.target.closest('#side') || (e.target.closest('#view') && !e.target.closest('input,textarea'))) return curProject()
+      ? [item('newTask'), item('runBuild'), item('runTest'), item('runApp'), null, item('projReview'), item('newChat'), null, item('stopAll')]
+      : [item('newApp'), item('addProject'), null, item('newChat'), item('newTask'), item('newRoutine'), null, item('stopAll')];
     return null;
   });
   Native.setHandler(id => run(id));
 }
 
 /* Test hook (like Plan Studio's __pl). */
-window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel() { return sel; }, set sel(v) { sel = v; renderAll(); }, A, run, setView, specFrom, lastSlot, nextSlot, planTick, refresh, taskSpec, takeTasks};
+window.__ag = {migrate, openProject, info, jobs, projectSpec, addProject, get cfg() { return cfg; }, get data() { return data; }, get sel() { return sel; }, set sel(v) { sel = v; renderAll(); }, A, run, setView, specFrom, lastSlot, nextSlot, planTick, refresh, taskSpec, takeTasks};
 
 /* ================= Boot ================= */
 (async function boot() {
@@ -1495,13 +1486,13 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
   try {
     const text = invoke ? await invoke('config_load') : saved && saved.cfg ? JSON.stringify(saved.cfg) : null;
     const c = text ? JSON.parse(text) : null;
-    cfg = {...newCfg(), ...(c || {})};
+    cfg = migrate({...newCfg(), ...(c || {})});
     cfg.todo = {...newCfg().todo, ...(cfg.todo || {})};
     cfg.chat = {...newCfg().chat, ...(cfg.chat || {})};
     cfg.link = {...newCfg().link, ...(cfg.link || {})};
     if (invoke) invoke('config_save', {content: JSON.stringify(cfg, null, 1), claude: cfg.claude || '', codex: cfg.codex || ''}).catch(() => {});
   } catch (e) { cfg = newCfg(); toast(t('toast.loadFail', {e})); }
-  await Promise.all(cfg.todoFiles.map(f => loadTodo(f.path)));
+  await loadAllInfo();
   await refresh();
   booted = true;
   applySettings();
@@ -1509,7 +1500,9 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
   checkClaude();
   checkCodex();
   if (invoke) {
-    listen('runs-changed', refreshSoon);
+    listen('runs-changed', () => { refreshSoon(); infoSoon(); });
+    listen('job-output', jobOutput);
+    listen('job-done', jobDone);
     listen('link-task', takeTasks);
     takeTasks();
     listen('run-log', e => {
@@ -1524,6 +1517,8 @@ window.__ag = {get cfg() { return cfg; }, get data() { return data; }, get sel()
     });
   }
   setInterval(watchTodos, 4000);
+  // The git state of the projects changes outside too (a commit in the terminal): read it again now and then.
+  setInterval(() => { if (!typing() && booted) loadAllInfo().then(() => { renderSide(); if (settings.view === 'home' || (settings.view === 'project' && settings.ptab === 'overview')) renderView(); }); }, 30000);
   setInterval(planTick, 30000);
   setTimeout(planTick, 16000);
   // Durations and "in 5 min" go on.

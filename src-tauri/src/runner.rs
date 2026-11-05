@@ -54,6 +54,10 @@ pub struct Spec {
     pub said: String,
     /// The Studio app that sent this task (link.rs), when one did.
     pub origin: Option<crate::link::Origin>,
+    /// The project (app) the run belongs to (its id in the setup).
+    pub project: Option<String>,
+    /// What kind of work it is ("feature", "fix", "test", "review", "release", "new-app" …), for the history.
+    pub work: String,
 }
 
 const LEVELS: [&str; 4] = ["read", "edit", "commit", "publish"];
@@ -151,7 +155,7 @@ Wenn du etwas von der Person brauchst (eine Frage, eine Entscheidung oder eine F
 ```agent-studio
 {{\"needs\": \"question\", \"text\": \"deine Frage\", \"options\": [\"Antwort 1\", \"Antwort 2\"]}}
 ```
-(options darf fehlen; für eine Freigabe \"needs\": \"approval\" und in \"text\", was du tun willst.) Die Antwort kommt als nächste Nachricht.
+(options darf fehlen; für eine Freigabe \"needs\": \"approval\", in \"text\", was du tun willst, und in \"command\" den genauen Befehl, den du ausführen willst.) Die Antwort kommt als nächste Nachricht.
 Schreibe zum Schluss immer eine kurze Zusammenfassung auf Deutsch: was du getan hast, was geändert wurde, was offen ist.{}",
             level_text(s, true), if rules.is_empty() { String::new() } else { format!("Regeln der Person:\n{rules}\n") }, todo)
     } else {
@@ -162,7 +166,7 @@ When you need something from the person (a question, a decision, or approval for
 ```agent-studio
 {{\"needs\": \"question\", \"text\": \"your question\", \"options\": [\"answer 1\", \"answer 2\"]}}
 ```
-(options may be left out; for an approval use \"needs\": \"approval\" and say in \"text\" what you want to do.) The answer comes as the next message.
+(options may be left out; for an approval use \"needs\": \"approval\", say in \"text\" what you want to do and give the exact command in \"command\".) The answer comes as the next message.
 Always end with a short summary: what you did, what changed, what is still open.{}",
             level_text(s, false), if rules.is_empty() { String::new() } else { format!("The person's rules:\n{rules}\n") }, todo)
     }
@@ -176,7 +180,7 @@ Deine Rechte in diesem Chat: {}. Was darüber hinausgeht, wird automatisch abgel
 {}
 Brauchst du eine Freigabe für etwas, das du nicht darfst, schreibe am Ende deiner Antwort genau einen Block:
 ```agent-studio
-{{\"needs\": \"approval\", \"text\": \"was du tun willst\"}}
+{{\"needs\": \"approval\", \"text\": \"was du tun willst\", \"command\": \"der genaue Befehl\"}}
 ```
 Antworte auf Deutsch, so ausführlich wie nötig und so kurz wie möglich; eine Zusammenfassung am Ende brauchst du nicht.",
             level_text(s, true), if rules.is_empty() { String::new() } else { format!("Regeln der Person:\n{rules}\n") })
@@ -186,7 +190,7 @@ Your rights in this chat: {}. Anything beyond is refused automatically — don't
 {}
 When you need approval for something you may not do, end your answer with exactly one block:
 ```agent-studio
-{{\"needs\": \"approval\", \"text\": \"what you want to do\"}}
+{{\"needs\": \"approval\", \"text\": \"what you want to do\", \"command\": \"the exact command\"}}
 ```
 Answer as fully as needed and as briefly as possible; no summary at the end is needed.",
             level_text(s, false), if rules.is_empty() { String::new() } else { format!("The person's rules:\n{rules}\n") })
@@ -306,11 +310,14 @@ pub fn parse_line(line: &str) -> Vec<Ev> {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Default)]
+#[serde(default)]
 pub struct Needs {
     /// "question" or "approval".
     pub kind: String,
     pub text: String,
     pub options: Vec<String>,
+    /// For an approval asked with the block: the exact commands Claude wants to run (allowed once when approved).
+    pub commands: Vec<String>,
 }
 
 /// The ```agent-studio block at the end of Claude's answer (a question / an approval), and the answer without it.
@@ -319,10 +326,50 @@ pub fn needs(text: &str) -> (String, Option<Needs>) {
     let body = &text[start + "```agent-studio".len()..];
     let end = body.find("```").unwrap_or(body.len());
     let rest = format!("{}{}", &text[..start], body.get(end + 3..).unwrap_or("")).trim().to_string();
-    let Ok(v) = serde_json::from_str::<Value>(body[..end].trim()) else { return (rest, Some(Needs { kind: "question".into(), text: body[..end].trim().into(), options: vec![] })) };
+    let Ok(v) = serde_json::from_str::<Value>(body[..end].trim()) else { return (rest, Some(Needs { kind: "question".into(), text: body[..end].trim().into(), ..Default::default() })) };
     let kind = match v.get("needs").and_then(Value::as_str) { Some("approval") => "approval", _ => "question" };
     let options = v.get("options").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
-    (rest, Some(Needs { kind: kind.into(), text: v.get("text").and_then(Value::as_str).unwrap_or("").to_string(), options }))
+    let mut commands: Vec<String> = v.get("commands").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(|c| c.trim().to_string()).collect()).unwrap_or_default();
+    if let Some(c) = v.get("command").and_then(Value::as_str) { commands.insert(0, c.trim().to_string()); }
+    commands.retain(|c| !c.is_empty());
+    (rest, Some(Needs { kind: kind.into(), text: v.get("text").and_then(Value::as_str).unwrap_or("").to_string(), options, commands }))
+}
+
+/// The parts of a shell command line: `cd x && git add -A && git commit -m "a; b"` → `cd x`, `git add -A`,
+/// `git commit -m "a; b"` (split at &&, ||, ;, | and new lines outside quotes).
+pub fn command_parts(cmd: &str) -> Vec<String> {
+    let (mut out, mut cur, mut quote) = (Vec::new(), String::new(), None::<char>);
+    let mut chars = cmd.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (Some(q), _) if c == q => { quote = None; cur.push(c); }
+            (Some(_), '\\') => { cur.push(c); if let Some(n) = chars.next() { cur.push(n); } }
+            (Some(_), _) => cur.push(c),
+            (None, '\'' | '"') => { quote = Some(c); cur.push(c); }
+            (None, '\\') => { cur.push(c); if let Some(n) = chars.next() { cur.push(n); } }
+            (None, '&') if chars.peek() == Some(&'&') => { chars.next(); out.push(std::mem::take(&mut cur)); }
+            (None, '|') => { if chars.peek() == Some(&'|') { chars.next(); } out.push(std::mem::take(&mut cur)); }
+            (None, ';' | '\n') => out.push(std::mem::take(&mut cur)),
+            _ => cur.push(c),
+        }
+    }
+    out.push(cur);
+    out.into_iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty()).collect()
+}
+
+/// The rules an approval allows: each refused command, and for a command line of several commands each of its parts
+/// as well — Claude Code checks the parts one by one, so a rule for the whole line alone does not let it through.
+pub fn approval_rules(rules: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut add = |r: String| { if !out.contains(&r) { out.push(r); } };
+    for r in rules {
+        add(r.clone());
+        if let Some(cmd) = r.strip_prefix("Bash(").and_then(|x| x.strip_suffix(')')) {
+            let parts = command_parts(cmd);
+            if parts.len() > 1 { for p in parts { add(format!("Bash({p})")); } }
+        }
+    }
+    out
 }
 
 /// A command without a console window on Windows.
@@ -521,6 +568,22 @@ mod tests {
     }
 
     #[test]
+    fn an_approved_command_line_is_allowed_part_by_part() {
+        assert_eq!(command_parts(r#"cd /x && git add -A && git commit -m "a && b; c" | cat"#), vec!["cd /x", "git add -A", r#"git commit -m "a && b; c""#, "cat"]);
+        assert_eq!(command_parts("git push origin main"), vec!["git push origin main"]);
+        assert_eq!(command_parts("a || b; c\nd"), vec!["a", "b", "c", "d"]);
+        assert_eq!(command_parts(r#"echo 'it''s' \; x"#), vec![r#"echo 'it''s' \; x"#]);
+        let r = approval_rules(&["Bash(git add . && git commit -m \"x\" && git push)".into(), "Write".into()]);
+        assert_eq!(r, vec!["Bash(git add . && git commit -m \"x\" && git push)", "Bash(git add .)", "Bash(git commit -m \"x\")", "Bash(git push)", "Write"]);
+        // In auto mode the refusal of pushing must give way to the approved part.
+        let mut s = spec("commit");
+        s.auto = true;
+        s.allow_once = r;
+        let (a, d) = rules(&s);
+        assert!(a.contains(&"Bash(git push)".into()) && !d.iter().any(|x| x == "Bash(git push)" || x == "Bash(git push *)"));
+    }
+
+    #[test]
     fn arguments() {
         let mut s = spec("commit");
         s.model = "sonnet".into();
@@ -572,7 +635,9 @@ mod tests {
         let t = "Ich habe alles vorbereitet.\n\n```agent-studio\n{\"needs\": \"approval\", \"text\": \"Release v1.2.0 pushen?\", \"options\": [\"Ja\", \"Nein\"]}\n```\n";
         let (rest, n) = needs(t);
         assert_eq!(rest, "Ich habe alles vorbereitet.");
-        assert_eq!(n, Some(Needs { kind: "approval".into(), text: "Release v1.2.0 pushen?".into(), options: vec!["Ja".into(), "Nein".into()] }));
+        assert_eq!(n, Some(Needs { kind: "approval".into(), text: "Release v1.2.0 pushen?".into(), options: vec!["Ja".into(), "Nein".into()], commands: vec![] }));
+        let (_, n) = needs("```agent-studio\n{\"needs\": \"approval\", \"text\": \"Pushen?\", \"command\": \" git push origin main \"}\n```");
+        assert_eq!(n.unwrap().commands, vec!["git push origin main".to_string()]);
         assert_eq!(needs("Nur Text").1, None);
         let (_, n) = needs("x\n```agent-studio\nWelche Farbe?\n```");
         assert_eq!(n.unwrap().text, "Welche Farbe?");

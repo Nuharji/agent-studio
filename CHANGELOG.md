@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.0.0 — 2026-11-05
+Agent Studio is rebuilt for building apps with AI.
+- New: **projects** — your apps, in the sidebar. A project is a folder (usually a git repository); Agent Studio reads its
+  name, version and stack (Tauri, Rust, Node, Python, Go, Swift, web), its commands, its git state (branch, changes,
+  commits not pushed, last tag) and its README / STATUS / CHANGELOG. Each project has its own rights for Claude
+  (level, allowed commands, internet, auto mode, model, rules, more folders), its to-do list and its sessions.
+- New: the project page with the box for the **kinds of work**: Feature, Fix a bug, Tests, Clean up, Code review,
+  Release, Question — each with its own instructions for Claude; reviews and questions run read-only; "Plan first".
+- New: **Commands** — build, test, start the app or any command, run by Agent Studio itself (no AI) with live output;
+  when one fails, "Let Claude fix it" sends the command and the end of its output. Menu Project: Ctrl+B / Ctrl+Shift+T / Ctrl+Shift+R.
+- New: **Changes** — what is not committed yet, with the diff; let Claude review it (read-only), commit it or push it.
+- New: **New app with AI** — name, place, kind (Studio app, web app, desktop app, Rust, Python or Claude decides) and
+  what it should do: Agent Studio makes the folder and Claude sets the app up (skeleton, README, CHANGELOG, TODO.md,
+  first tests, git). A folder with several apps offers to add each as a project.
+- New: Overview of all apps; routines belong to a project (its folders and rights); new routine template "Daily code review".
+- Fix: an approval of a refused command line with several commands (`git add … && git commit … && git push`) now
+  really lets it through — each part is allowed, since Claude Code checks them one by one. Approvals asked for with
+  the request block now carry the exact command.
+- Moved: the AI tools for school are in Plan Studio now (study sheet routine template, Plan Studio's entries, study plan
+  and flashcards no longer go through Agent Studio).
+- Your setup moves over by itself: every folder your linked to-do lists worked in becomes a project with their rights.
+
 ## 0.12.1 — 2026-11-03
 - Fix (macOS): the app no longer asks again and again for access to your Documents folder (or Desktop, Downloads). The app is now signed as a whole, so macOS can remember your answer. After an update, macOS may ask once more.
 

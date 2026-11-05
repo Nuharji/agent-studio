@@ -3,11 +3,13 @@
 
 mod agentlink;
 mod codex;
+mod jobs;
 mod link;
 mod runner;
 mod runs;
 mod mcp;
 mod mcp_tools;
+mod project;
 mod shared;
 mod slash;
 mod todo;
@@ -273,6 +275,43 @@ fn todo_add(path: String, section: String, text: String) -> Result<usize, String
     Ok(line)
 }
 
+/// What a project is: name, version, stack, commands, git state, its files (project.rs).
+#[tauri::command]
+async fn project_info(dir: String) -> project::Info {
+    tauri::async_runtime::spawn_blocking(move || project::info(&dir)).await.unwrap_or_default()
+}
+
+/// Several projects at once (the overview).
+#[tauri::command]
+async fn projects_info(dirs: Vec<String>) -> Vec<project::Info> {
+    tauri::async_runtime::spawn_blocking(move || dirs.iter().map(|d| project::info(d)).collect()).await.unwrap_or_default()
+}
+
+/// What is not committed yet in a project.
+#[tauri::command]
+async fn project_diff(dir: String) -> String {
+    tauri::async_runtime::spawn_blocking(move || project::worktree_diff(&dir)).await.unwrap_or_default()
+}
+
+/// The folder of a new app.
+#[tauri::command]
+fn project_make_dir(path: String) -> Result<String, String> { project::make_dir(&path) }
+
+/// A text file of a project for reading in the app (README, STATUS, CHANGELOG), at most 400 KB.
+#[tauri::command]
+fn read_text(path: String) -> Result<String, String> {
+    use std::io::Read;
+    let mut buf = Vec::new();
+    fs::File::open(&path).map_err(|e| e.to_string())?.take(400_000).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// Opens a file or folder with the program the system uses for it.
+#[tauri::command]
+fn open_path(app: AppHandle, path: String) -> Result<(), String> {
+    app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 async fn pick_folder(app: AppHandle) -> Option<String> {
     shared::file_dialog(&app).blocking_pick_folder().and_then(|f| f.into_path().ok()).map(|p| p.to_string_lossy().into_owned())
@@ -438,6 +477,14 @@ fn main() {
             todo_stamps,
             todo_tick,
             todo_add,
+            project_info,
+            projects_info,
+            project_diff,
+            project_make_dir,
+            read_text,
+            open_path,
+            jobs::job_start,
+            jobs::job_stop,
             pick_folder,
             pick_file,
             pick_files,
