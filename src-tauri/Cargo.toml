@@ -1,6 +1,6 @@
 [package]
 name = "agent-studio"
-version = "1.0.0"
+version = "1.1.0"
 description = "Build apps with AI: projects with their own rights, tasks, sessions with Claude, commands and changes"
 edition = "2021"
 rust-version = "1.77"

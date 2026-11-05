@@ -1362,7 +1362,7 @@ function renderSettings() {
       <h3>${esc(t('link.title'))}</h3><p class="hint">${esc(t('link.hint'))}</p>
       ${sw('linkAccept', t('link.accept'), cfg.link.accept)}${sw('linkWeb', t('link.web'), cfg.link.web)}
       <div class="ed-field" style="max-width:420px"><label>${esc(t('link.level'))}</label><select class="wide-sel" data-set="linkLevel">${opt('read', t('lv.read'), cfg.link.level)}${opt('edit', t('link.levelEdit'), cfg.link.level)}</select></div>`,
-    appearance: `<h3>${esc(t('set.theme'))}</h3><div class="theme-grid">` + THEMES.map(th =>
+    appearance: (window.Shared ? Shared.scopePicker() : '') + `<h3>${esc(t('set.theme'))}</h3><div class="theme-grid">` + THEMES.map(th =>
       `<button class="theme-card${settings.theme === th ? ' active' : ''}" data-theme-pick="${th}">${mock(th)}
        <div class="theme-name">${esc(t('theme.' + th))}<span>${settings.theme === th ? '&#10003;' : ''}</span></div></button>`).join('') + '</div>' + (window.Shared ? Shared.layoutHeading() : ''),
     keys: '<div id="keysBox"></div>'
@@ -1476,7 +1476,7 @@ window.__ag = {migrate, openProject, info, jobs, projectSpec, addProject, get cf
   try { saved = JSON.parse(localStorage.getItem(STORE)); } catch (e) {}
   if (saved && saved.settings) settings = {...DEF, ...saved.settings};
   // Theme and language shared by all Studio apps (shared.js); the shared values win over this app's own.
-  if (window.Shared) await Shared.init({apply: sh => {
+  if (window.Shared) await Shared.init({app: 'ag', apply: sh => {
     if (sh.theme) settings.theme = sh.theme;
     if (sh.lang) settings.lang = sh.lang;
     if (booted) applySettings();
