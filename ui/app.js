@@ -103,7 +103,7 @@ const isChat = r => !!(r && firstOf(r).spec.chat);
 /* ================= Runs ================= */
 function specFrom(o, extra = {}) {
   return {title: o.name || o.title || '', prompt: o.prompt || '', dirs: (o.dirs || []).filter(Boolean), level: LEVELS.includes(o.level) ? o.level : 'read',
-    commands: list(o.commands), web: !!o.web, noDelete: o.noDelete !== false, planOnly: !!o.planOnly, auto: !!o.auto, maxMinutes: Math.max(0, +o.maxMinutes || 0),
+    commands: list(o.commands), web: !!o.web, connectors: !!o.connectors, noDelete: o.noDelete !== false, planOnly: !!o.planOnly, auto: !!o.auto, maxMinutes: Math.max(0, +o.maxMinutes || 0),
     model: o.model || cfg.model || '', rules: [...lines(cfg.rules), ...lines(o.rules)], lang, routineId: o.id || null, ...extra};
 }
 async function startRun(spec, {show = true, manual = true} = {}) {
@@ -531,7 +531,7 @@ function taskSpec(x) {
   const level = cfg.link.level === 'edit' && x.level === 'edit' && dirs.length ? 'edit' : 'read';
   const title = x.title || x.task.split('\n')[0].slice(0, 60);
   const said = x.task.trim() + (x.files.length ? '\n' + x.files.map(f => '📄 ' + baseName(f)).join('\n') : '');
-  return specFrom({...cfg.chat, id: null, name: '', title: `${x.app}: ${title}`, dirs, level, web: !!(x.web && cfg.link.web), auto: false, noDelete: true, commands: ''},
+  return specFrom({...cfg.chat, id: null, name: '', title: `${x.app}: ${title}`, dirs, level, web: !!(x.web && cfg.link.web), connectors: false, auto: false, noDelete: true, commands: ''},
     {prompt: taskPrompt(x), said, chat: true, origin: {app: x.app, task: x.id, title, created: x.created || Date.now()}});
 }
 let taking = false;
@@ -610,6 +610,7 @@ function renderDetails() {
       <div class="kv"><span>${esc(t('det.rights'))}</span><b>${esc(t('lv.' + p.level))}${p.auto ? ' · ' + esc(t('ed.autoShort')) : ''}</b></div>
       <div class="kv"><span>${esc(t('p.allowed'))}</span><b title="${esc(p.commands || '')}">${esc(p.commands || '—')}</b></div>
       <div class="kv"><span>${esc(t('ed.web'))}</span><b>${esc(t(p.web ? 'ui.yes' : 'ui.no'))}</b></div>
+      <div class="kv"><span>${esc(t('ed.connectorsShort'))}</span><b>${esc(t(p.connectors ? 'ui.yes' : 'ui.no'))}</b></div>
       ${i.git ? `<div class="kv"><span>${esc(t('p.remote'))}</span><b title="${esc(i.git.remote)}">${esc(i.git.remote.replace(/^https:\/\/github.com\//, '') || '—')}</b></div>` : ''}
       <p><button class="btn-sm" data-ptab="setup">${esc(t('p.editRights'))}</button></p>
       <div class="group-h">${esc(t('det.levels'))}</div>${LEVELS.map(l => `<div class="kv"><span>${esc(t('lv.' + l))}</span></div><div class="meta" style="margin:-2px 0 6px">${esc(t('lv.' + l + '.hint'))}</div>`).join('')}`;
@@ -693,7 +694,8 @@ const growChat = el => { el.style.height = 'auto'; el.style.height = Math.min(el
 /* ================= Slash commands ================= */
 /* Like in the Claude desktop app: "/" in the chat box opens a list of commands. Agent Studio does the built-in ones
    itself; the person's own commands and skills (~/.claude/commands, ~/.claude/skills and the same in the run's
-   folders) are expanded to their text (slash_expand) — runs start without Claude Code's own setup. */
+   folders, and the plugins turned on) are expanded to their text (slash_expand) — runs start without Claude Code's
+   own setup. Claude Code's own commands that work without a window (/init, /review …) go to it as they are. */
 const BUILTIN = [
   {name: 'clear', alias: ['new', 'reset'], hint: 'sl.hintText'},
   {name: 'model', hint: 'sl.hintModel'},
@@ -704,6 +706,12 @@ const BUILTIN = [
   {name: 'stop'},
   {name: 'full'},
   {name: 'help'},
+  // Claude Code's own commands that work without a window: sent to it as they are.
+  {name: 'init', pass: true},
+  {name: 'review', pass: true, hint: 'sl.hintText'},
+  {name: 'security-review', pass: true},
+  {name: 'context', pass: true, session: true},
+  {name: 'mcp', pass: true},
 ];
 const MODELS = ['default', ...MODEL_OPTS.slice(1)];
 const chatMode = {};     // run id → {fresh, model, plan}: what the next message changes (/clear, /model, /plan)
@@ -715,6 +723,7 @@ async function ownCommands(r) {
   slashCache[key] = {at: Date.now(), list};
   return list;
 }
+const ownTag = c => t(c.kind === 'skill' ? 'sl.skill' : 'sl.own') + (c.source === 'project' ? ' · ' + t('sl.project') : c.source === 'plugin' ? ' · ' + t('sl.plugin') : '');
 const builtinOf = n => BUILTIN.find(b => b.name === n || (b.alias || []).includes(n));
 const modelName = m => m ? t('model.' + m) : t('model.default');
 function modeChips(id) {
@@ -730,7 +739,7 @@ async function slashEntries(r, text) {
   const m = /^\/(\S*)$/.exec(text); if (!m) return [];
   const q = m[1].toLowerCase();
   const all = [...BUILTIN.map(b => ({name: b.name, desc: t('sl.' + b.name), hint: b.hint ? t(b.hint) : '', tag: '', alias: b.alias || []})),
-    ...(await ownCommands(r)).map(c => ({name: c.name, desc: c.description, hint: c.hint, tag: t(c.kind === 'skill' ? 'sl.skill' : 'sl.own') + (c.source === 'project' ? ' · ' + t('sl.project') : '')}))];
+    ...(await ownCommands(r)).map(c => ({name: c.name, desc: c.description, hint: c.hint, tag: ownTag(c)}))];
   const hit = e => [e.name, ...(e.alias || [])].some(n => n.toLowerCase().startsWith(q));
   return [...all.filter(hit), ...all.filter(e => !hit(e) && (e.name.toLowerCase().includes(q) || String(e.desc).toLowerCase().includes(q)))].slice(0, 40)
     .map(e => ({...e, fill: '/' + e.name + ' '}));
@@ -765,7 +774,7 @@ function slashHelp(r) {
   ownCommands(r).then(own => {
     const row = (n, h, d, tag) => `<tr><td><b>/${esc(n)}</b>${h ? ` <span class="sl-hint">${esc(h)}</span>` : ''}</td><td>${esc(d)}${tag ? ` <span class="sl-tag">${esc(tag)}</span>` : ''}</td></tr>`;
     modal(t('sl.helpTitle'), `<p class="meta">${esc(t('sl.helpIntro'))}</p><table class="sl-table">${BUILTIN.map(b => row(b.name + (b.alias ? ', /' + b.alias.join(', /') : ''), b.hint ? t(b.hint) : '', t('sl.' + b.name))).join('')}
-      ${own.map(c => row(c.name, c.hint, c.description, t(c.kind === 'skill' ? 'sl.skill' : 'sl.own') + (c.source === 'project' ? ' · ' + t('sl.project') : ''))).join('')}</table>
+      ${own.map(c => row(c.name, c.hint, c.description, ownTag(c))).join('')}</table>
       ${own.length ? '' : `<p class="meta">${esc(t('sl.noOwn'))}</p>`}`);
   });
 }
@@ -800,6 +809,11 @@ async function sendChat(id) {
       case 'stop': done(); return isRunning(id) ? stopRun(id) : toast(t('run.noneRunning'));
       case 'full': done(); return full ? closeFull() : openFull(id);
       case 'help': done(); return slashHelp(r);
+      default:
+        if (!b.pass) break;
+        if (isCodex(r.spec.model)) return toast(t('sl.claudeOnly'));
+        if (b.session && !r.sessionId) return toast(t('sl.noSession'));
+        prompt = '/' + b.name + (args ? ' ' + args : ''); opts = {...opts, fresh: b.session ? false : opts.fresh};
     } else {
       const c = (await ownCommands(r)).find(x => x.name.toLowerCase() === name);
       if (!c) return toast(t('sl.unknown', {name: m[1]}));
@@ -829,6 +843,8 @@ function rightsFields(o, key, noDirs) {
     <div class="hint" style="margin:-4px 0 10px;color:var(--dim);font-size:11.5px;line-height:1.5">${esc(t(o.auto ? 'ed.autoOn' : 'ed.autoHint'))}</div>
     ${!o.auto && LEVELS.indexOf(o.level) >= 1 ? `<div class="ed-field"><label>${esc(t('ed.commands'))}</label><input class="field-in" data-f="${key}|commands" value="${esc(o.commands || '')}" placeholder="cargo test, npm run build"><div class="hint">${esc(t('ed.commandsHint'))}</div></div>` : ''}
     <label class="switch"><input type="checkbox" data-sw="${key}|web"${o.web ? ' checked' : ''}><span></span>${esc(t('ed.web'))}</label>
+    <label class="switch"><input type="checkbox" data-sw="${key}|connectors"${o.connectors ? ' checked' : ''}><span></span>${esc(t('ed.connectors'))}</label>
+    <div class="hint" style="margin:-4px 0 10px;color:var(--dim);font-size:11.5px;line-height:1.5">${esc(t('ed.connectorsHint'))}</div>
     <label class="switch"><input type="checkbox" data-sw="${key}|noDelete"${o.noDelete !== false ? ' checked' : ''}><span></span>${esc(t('ed.noDelete'))}</label>
     <label class="switch"><input type="checkbox" data-sw="${key}|planOnly"${o.planOnly ? ' checked' : ''}><span></span>${esc(t('ed.planOnly'))}</label>
     <div class="ed-field"><label>${esc(t('ed.limit'))}</label><div class="two"><input type="number" min="0" max="600" step="5" data-f="${key}|maxMinutes" value="${esc(o.maxMinutes || 0)}">

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+- New: **connectors, skills & plugins** — a new right "Use connectors, skills & plugins" (project setup, routines, tasks). With it a run gets your Claude Code plugins that are turned on (with their skills, commands and agents), your MCP servers (`~/.claude.json`, the project's `.mcp.json`, the plugins' own) and your claude.ai connectors, and may use their tools and skills. Agent Studio's rights still are the only ones that count. A claude.ai connector is learned in the first run that sees it (that run asks you for approval). Without the right, auto mode uses no MCP tool.
+- New: the commands and skills of your plugins in the `/` menu (`/plugin:command`), and Claude Code's own commands that work without a window: `/init`, `/review`, `/security-review`, `/context`, `/mcp`.
+
 ## 1.4.0 — 2026-11-05
 - New: the **usage limit** of your Claude plan on the home page — the current 5-hour session and the week (all models, and Opus/Sonnet when your plan has them), each as a bar with the percent used and when it resets, like `/usage` in Claude Code. Read with Claude Code's own sign-in (the token is only sent to Anthropic, never stored), refreshed every 5 minutes or with "Refresh".
 - New: four more CLI themes with other accent colors — CLI Amber, CLI Cyan, CLI Magenta and CLI White (black, monospace, square, like CLI (Terminal), just not green). Choose them like the other themes (Settings → Appearance or Settings menu → Theme).

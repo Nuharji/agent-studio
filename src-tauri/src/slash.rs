@@ -1,6 +1,7 @@
 //! The person's own slash commands and skills, as in the Claude desktop app: Markdown files in ~/.claude/commands,
 //! ~/.claude/skills/<name>/SKILL.md and the same in a run's folders (<dir>/.claude/…). Runs start with
-//! --setting-sources "" (Claude Code loads none of them itself), so Agent Studio expands a command to its text.
+//! --setting-sources "" (Claude Code loads none of them itself), so Agent Studio expands a command to its text. The
+//! commands and skills of the plugins the person installed and turned on come too ("/plugin:name", connect.rs).
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -65,14 +66,16 @@ fn commands(dir: &Path, prefix: &str, source: &str, out: &mut Vec<Cmd>, depth: u
     }
 }
 
-fn skills(dir: &Path, source: &str, out: &mut Vec<Cmd>) {
+fn skills(dir: &Path, prefix: &str, source: &str, out: &mut Vec<Cmd>) {
     let Ok(rd) = std::fs::read_dir(dir) else { return };
     let mut es: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
     es.sort();
     for p in es {
         let f = p.join("SKILL.md");
         let name = p.file_name().unwrap_or_default().to_string_lossy().into_owned();
-        if f.is_file() && !name.starts_with('.') { if let Some(c) = read(&f, name, "skill", source) { out.push(c); } }
+        if f.is_file() && !name.starts_with('.') {
+            if let Some(mut c) = read(&f, name, "skill", source) { c.name = format!("{prefix}{}", c.name); out.push(c); }
+        }
     }
 }
 
@@ -84,11 +87,17 @@ pub fn list(home: &Path, dirs: &[String]) -> Vec<Cmd> {
         let c = Path::new(d).join(".claude");
         if c == home.join(".claude") { continue; }
         commands(&c.join("commands"), "", "project", &mut out, 0);
-        skills(&c.join("skills"), "project", &mut out);
+        skills(&c.join("skills"), "", "project", &mut out);
     }
     let c = home.join(".claude");
     commands(&c.join("commands"), "", "user", &mut out, 0);
-    skills(&c.join("skills"), "user", &mut out);
+    skills(&c.join("skills"), "", "user", &mut out);
+    // The installed plugins that are turned on: "/plugin:command", "/plugin:skill".
+    for p in crate::connect::plugins(home, dirs) {
+        let (dir, prefix) = (Path::new(&p.path), format!("{}:", p.name));
+        commands(&dir.join("commands"), &prefix, "plugin", &mut out, 0);
+        skills(&dir.join("skills"), &prefix, "plugin", &mut out);
+    }
     let mut seen: Vec<String> = Vec::new();
     out.retain(|c| { let k = c.name.to_lowercase(); if seen.contains(&k) { false } else { seen.push(k); true } });
     out
@@ -168,6 +177,15 @@ mod tests {
         assert_eq!(expand(&l[1].path, "command", "git:sync", "main", false).unwrap(), "# Pull and push\nPull, then push.\n\nARGUMENTS: main");
         let s = expand(&l[2].path, "skill", "pdf-tools", "read x.pdf", true).unwrap();
         assert!(s.contains("„pdf-tools“") && s.contains("Use pdftotext.") && s.ends_with("Aufgabe: read x.pdf") && !s.contains("description"));
+
+        let pl = d.join("plugins/design");
+        w(pl.join("commands/handoff.md"), "---\ndescription: Hand off to dev\n---\nWrite the spec.");
+        w(pl.join("skills/critique/SKILL.md"), "---\ndescription: Critique a design\n---\nLook closely.");
+        w(home.join(".claude/plugins/installed_plugins.json"), &format!(r#"{{"version":2,"plugins":{{"design@x":[{{"scope":"user","installPath":{:?}}}]}}}}"#, pl.to_string_lossy()));
+        w(home.join(".claude/settings.json"), r#"{"enabledPlugins":{"design@x":true}}"#);
+        let l = list(&home, &[]);
+        let p: Vec<(&str, &str)> = l.iter().filter(|c| c.source == "plugin").map(|c| (c.name.as_str(), c.kind.as_str())).collect();
+        assert_eq!(p, vec![("design:handoff", "command"), ("design:critique", "skill")]);
         let _ = std::fs::remove_dir_all(d);
     }
 

@@ -3,6 +3,7 @@
 
 mod agentlink;
 mod codex;
+mod connect;
 mod jobs;
 mod link;
 mod runner;

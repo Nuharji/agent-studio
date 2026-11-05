@@ -29,6 +29,17 @@ pub struct Spec {
     /// Commands allowed from the level "edit" on (e.g. "cargo test", "npm run build").
     pub commands: Vec<String>,
     pub web: bool,
+    /// The person's own Claude Code setup: their plugins (with their skills, commands and agents), MCP servers and
+    /// claude.ai connectors (connect.rs).
+    pub connectors: bool,
+    /// Filled in when the run starts (connect::setup), never kept: the plugin folders, the MCP config (JSON) and the
+    /// servers whose tools are allowed.
+    #[serde(skip)]
+    pub plugin_dirs: Vec<String>,
+    #[serde(skip)]
+    pub mcp_config: String,
+    #[serde(skip)]
+    pub mcp_servers: Vec<String>,
     pub no_delete: bool,
     /// Only plan: say what would be done, change nothing.
     pub plan_only: bool,
@@ -88,6 +99,10 @@ pub fn rules(s: &Spec) -> (Vec<String>, Vec<String>) {
     if lv >= 2 { for c in ["git add", "git commit", "git mv", "git restore --staged", "git stash list"] { allow.extend(bash(c)); } }
     if lv >= 3 { for c in ["git push", "git tag", "gh release create", "gh release upload", "gh pr create", "gh workflow run", "gh run rerun"] { allow.extend(bash(c)); } }
     if s.web { allow.extend(["WebFetch", "WebSearch"].map(String::from)); }
+    if s.connectors {
+        allow.push("Skill".into());
+        allow.extend(s.mcp_servers.iter().map(|n| crate::connect::allow_rule(n)));
+    }
     allow.extend(s.allow_once.iter().cloned());
     let mut deny: Vec<String> = Vec::new();
     // In auto mode everything the level doesn't allow is refused outright (otherwise Claude Code would decide).
@@ -96,6 +111,7 @@ pub fn rules(s: &Spec) -> (Vec<String>, Vec<String>) {
         if lv < 2 { for c in ["git add", "git commit", "git mv", "git rm", "git stash", "git reset", "git checkout", "git switch", "git merge", "git rebase", "git cherry-pick", "git revert"] { deny.extend(bash(c)); } }
         if lv < 3 { for c in ["git push", "git tag", "gh release", "gh pr", "gh workflow", "gh run rerun", "gh repo", "gh api", "npm publish", "cargo publish"] { deny.extend(bash(c)); } }
         if !s.web { deny.extend(["WebFetch", "WebSearch"].map(String::from)); }
+        if !s.connectors { deny.push("mcp__*".into()); }
     }
     for c in ["git push --force", "git push -f", "git push --force-with-lease", "git reset --hard", "git clean", "sudo"] { deny.extend(bash(c)); }
     if s.no_delete { for c in ["rm", "rmdir", "git rm", "del", "rd", "Remove-Item", "unlink", "find . -delete"] { deny.extend(bash(c)); } }
@@ -120,6 +136,7 @@ fn level_text(s: &Spec, de: bool) -> String {
     let mut t = what.to_string();
     if lv >= 1 && !s.commands.is_empty() { t += &format!("{}{}", if de { "; erlaubte Befehle: " } else { "; allowed commands: " }, s.commands.join(", ")); }
     if s.web { t += if de { "; Internet erlaubt" } else { "; internet allowed" }; }
+    if s.connectors { t += if de { "; die Konnektoren (MCP-Server), Skills und Plugins der Person darfst du nutzen" } else { "; you may use the person's connectors (MCP servers), skills and plugins" }; }
     if s.no_delete { t += if de { "; nichts löschen" } else { "; never delete" }; }
     if s.auto && !s.plan_only { t += if de { ". Auto-Modus: Innerhalb dieser Rechte arbeitest du selbstständig, ohne für jeden Schritt zu fragen; riskante Schritte prüft Claude Code und lehnt sie ab" } else { ". Auto mode: within these rights you work on your own without asking for each step; Claude Code checks risky steps and refuses them" }; }
     t
@@ -233,6 +250,10 @@ pub fn args(s: &Spec) -> Vec<String> {
     let mut a: Vec<String> = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode"].map(String::from).to_vec();
     a.push(if s.plan_only { "plan" } else if s.auto { "auto" } else { "dontAsk" }.into());
     a.extend(["--setting-sources".into(), String::new(), "--settings".into(), settings.to_string(), "--append-system-prompt".into(), system_prompt(s)]);
+    if s.connectors {
+        for p in &s.plugin_dirs { a.extend(["--plugin-dir".into(), p.clone()]); }
+        if !s.mcp_config.is_empty() { a.extend(["--mcp-config".into(), s.mcp_config.clone()]); }
+    }
     if !s.model.trim().is_empty() { a.extend(["--model".into(), s.model.trim().into()]); }
     if let Some(r) = s.resume.as_ref().filter(|r| !r.is_empty()) { a.extend(["--resume".into(), r.clone()]); }
     a
@@ -259,6 +280,8 @@ pub struct Denial {
 #[derive(Debug, PartialEq)]
 pub enum Ev {
     Session(String),
+    /// The MCP servers Claude Code has in this run (from its start), e.g. "claude.ai Canva".
+    Servers(Vec<String>),
     Log(&'static str, String),
     Result { text: String, error: bool, cost: f64, denials: Vec<Denial> },
 }
@@ -302,6 +325,9 @@ pub fn parse_line(line: &str) -> Vec<Ev> {
     match j.get("type").and_then(Value::as_str) {
         Some("system") if j.get("subtype").and_then(Value::as_str) == Some("init") => {
             if let Some(id) = j.get("session_id").and_then(Value::as_str) { out.push(Ev::Session(id.into())); }
+            let servers: Vec<String> = j.get("mcp_servers").and_then(Value::as_array).into_iter().flatten()
+                .filter_map(|m| m.get("name").and_then(Value::as_str)).map(str::to_string).collect();
+            if !servers.is_empty() { out.push(Ev::Servers(servers)); }
         }
         Some("assistant") => for c in j.pointer("/message/content").and_then(Value::as_array).into_iter().flatten() {
             match c.get("type").and_then(Value::as_str) {
@@ -578,6 +604,28 @@ mod tests {
         assert!(rules(&s).1.contains(&"Write".into()));
         s.auto = false;
         assert!(!rules(&s).1.contains(&"Write".into()), "without auto mode nothing beyond the level is allowed anyway");
+    }
+
+    #[test]
+    fn connectors_bring_plugins_servers_and_skills() {
+        let mut s = spec("edit");
+        s.auto = true;
+        assert!(rules(&s).1.contains(&"mcp__*".into()), "without connectors auto mode uses no MCP tool");
+        assert!(!args(&s).contains(&"--plugin-dir".into()));
+        s.connectors = true;
+        s.plugin_dirs = vec!["/p/design".into()];
+        s.mcp_config = r#"{"mcpServers":{}}"#.into();
+        s.mcp_servers = vec!["claude.ai Canva".into(), "github".into()];
+        let (a, d) = rules(&s);
+        assert!(a.contains(&"Skill".into()) && a.contains(&"mcp__claude_ai_Canva__*".into()) && a.contains(&"mcp__github__*".into()));
+        assert!(!d.contains(&"mcp__*".into()));
+        let x = args(&s);
+        let after = |f: &str| x.iter().position(|v| v == f).map(|i| x[i + 1].clone());
+        assert_eq!(after("--plugin-dir").as_deref(), Some("/p/design"));
+        assert_eq!(after("--mcp-config").as_deref(), Some(r#"{"mcpServers":{}}"#));
+        assert!(system_prompt(&s).contains("Konnektoren"));
+        let init = r#"{"type":"system","subtype":"init","session_id":"s","mcp_servers":[{"name":"claude.ai Canva","status":"connected"}]}"#;
+        assert_eq!(parse_line(init), vec![Ev::Session("s".into()), Ev::Servers(vec!["claude.ai Canva".into()])]);
     }
 
     #[test]

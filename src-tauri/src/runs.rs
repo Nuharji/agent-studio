@@ -162,7 +162,11 @@ pub fn start(app: &AppHandle, mut spec: Spec) -> Result<String, String> {
 
 fn execute(app: AppHandle, run: Run, exe: PathBuf) {
     let id = run.id.clone();
-    let spec = run.spec.clone();
+    let mut spec = run.spec.clone();
+    // The person's plugins, MCP servers and the connectors seen before (connect.rs), for this start only.
+    if spec.connectors && !codex::is_codex(&spec.model) {
+        (spec.plugin_dirs, spec.mcp_config, spec.mcp_servers) = crate::connect::setup(&runner::home(), &spec.dirs, &crate::connect::learned(&dir(&app)));
+    }
     let de = spec.lang == "de";
     log(&app, &id, "info", format!("{} {}", if de { "Start in" } else { "Starting in" }, spec.dirs.join(", ")));
     let mut cmd = runner::command(&exe);
@@ -207,6 +211,8 @@ fn execute(app: AppHandle, run: Run, exe: PathBuf) {
             for ev in if is_codex { reader.line(&line) } else { runner::parse_line(&line) } {
                 match ev {
                     runner::Ev::Session(s) => update(&app, &id, |r| r.session_id = s),
+                    // Learned for the next runs (the claude.ai connectors are only known from here); this run asks for them.
+                    runner::Ev::Servers(names) => { crate::connect::learn(&dir(&app), &names); }
                     runner::Ev::Log(k, t) => log(&app, &id, k, t),
                     r @ runner::Ev::Result { .. } => result = Some(r),
                 }
