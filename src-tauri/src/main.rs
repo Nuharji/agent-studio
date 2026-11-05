@@ -6,6 +6,7 @@ mod codex;
 mod connect;
 mod jobs;
 mod link;
+mod lock;
 mod runner;
 mod runs;
 mod mcp;
@@ -421,6 +422,7 @@ fn clipboard_write(app: AppHandle, text: String) -> Result<(), String> {
 
 fn main() {
     if mcp::wanted() { return mcp_tools::run(); }
+    if lock::wanted() { std::process::exit(lock::run()); }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -430,6 +432,7 @@ fn main() {
         .setup(|app| {
             let h = app.handle();
             let data = runs::load(h);
+            lock::release_all(&lock::dir(&runs::dir(h)));   // no run is going yet
             runs::save(h, &data);
             *app.state::<runs::Agent>().data.lock().unwrap() = data;
             // The heartbeat in status.json: the other apps see that Agent Studio is open; a task they send wakes the UI.

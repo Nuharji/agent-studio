@@ -169,8 +169,11 @@ fn execute(app: AppHandle, run: Run, exe: PathBuf) {
     }
     let de = spec.lang == "de";
     log(&app, &id, "info", format!("{} {}", if de { "Start in" } else { "Starting in" }, spec.dirs.join(", ")));
-    let mut cmd = runner::command(&exe);
     let is_codex = codex::is_codex(&spec.model);
+    // Two runs never change the same file at once: the hook asks this program first (lock.rs).
+    if !is_codex { spec.lock_hook = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(); }
+    let mut cmd = runner::command(&exe);
+    cmd.env(crate::lock::ENV_DIR, crate::lock::dir(&dir(&app))).env(crate::lock::ENV_RUN, &id).env(crate::lock::ENV_TITLE, &spec.title).env("AGENT_STUDIO_LANG", &spec.lang);
     cmd.args(if is_codex { codex::args(&spec) } else { runner::args(&spec) }).current_dir(&spec.dirs[0])
         .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped());
     runner::clean_env(&mut cmd);
@@ -230,6 +233,7 @@ fn execute(app: AppHandle, run: Run, exe: PathBuf) {
 }
 
 fn finish(app: &AppHandle, id: &str, result: Option<runner::Ev>, err: String, exit_ok: bool) {
+    crate::lock::release(&crate::lock::dir(&dir(app)), id);
     let st = app.state::<Agent>();
     let (stopped, timeout) = {
         let mut s = st.stopping.lock().unwrap();

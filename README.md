@@ -62,6 +62,8 @@ API key and no password; routines, logs and history stay on your computer.
   ones; the level stays the limit).
   Anything beyond is refused at once and comes to "Needs you". Never allowed: force-push, `git reset --hard`,
   `git clean`, `sudo`. Only Agent Studio's rights count — other Claude Code settings are not used in runs.
+- **One run per file:** two runs never change the same file at the same time — the first one holds it until it ends,
+  another one is stopped with a note and does something else first (Claude's file tools; not shell commands, not ChatGPT).
 - **See what Claude does:** a live log of every step (files, commands, what was refused), the **emergency stop** for
   everything, a history of every run with summary, changed files, commits and the **diff**, and **undo** of a run's
   commits (as long as they are not pushed).

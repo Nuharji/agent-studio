@@ -40,6 +40,9 @@ pub struct Spec {
     pub mcp_config: String,
     #[serde(skip)]
     pub mcp_servers: Vec<String>,
+    /// Filled in when the run starts: this program, for the hook that keeps two runs off the same file (lock.rs).
+    #[serde(skip)]
+    pub lock_hook: String,
     pub no_delete: bool,
     /// Only plan: say what would be done, change nothing.
     pub plan_only: bool,
@@ -246,7 +249,8 @@ Answer as fully as needed and as briefly as possible; no summary at the end is n
 pub fn args(s: &Spec) -> Vec<String> {
     let (allow, deny) = rules(s);
     let extra: Vec<&String> = s.dirs.iter().skip(1).collect();
-    let settings = json!({"permissions": {"allow": allow, "deny": deny, "additionalDirectories": extra}});
+    let mut settings = json!({"permissions": {"allow": allow, "deny": deny, "additionalDirectories": extra}});
+    if !s.lock_hook.is_empty() { settings["hooks"] = crate::lock::hook_settings(&s.lock_hook); }
     let mut a: Vec<String> = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode"].map(String::from).to_vec();
     a.push(if s.plan_only { "plan" } else if s.auto { "auto" } else { "dontAsk" }.into());
     a.extend(["--setting-sources".into(), String::new(), "--settings".into(), settings.to_string(), "--append-system-prompt".into(), system_prompt(s)]);
@@ -624,6 +628,9 @@ mod tests {
         assert_eq!(after("--plugin-dir").as_deref(), Some("/p/design"));
         assert_eq!(after("--mcp-config").as_deref(), Some(r#"{"mcpServers":{}}"#));
         assert!(system_prompt(&s).contains("Konnektoren"));
+        assert!(!x.iter().any(|v| v.contains("--file-lock")));
+        s.lock_hook = "/bin/agent-studio".into();
+        assert!(args(&s).iter().any(|v| v.contains(r#""PreToolUse""#) && v.contains("--file-lock")), "the hook for the locks");
         let init = r#"{"type":"system","subtype":"init","session_id":"s","mcp_servers":[{"name":"claude.ai Canva","status":"connected"}]}"#;
         assert_eq!(parse_line(init), vec![Ev::Session("s".into()), Ev::Servers(vec!["claude.ai Canva".into()])]);
     }
