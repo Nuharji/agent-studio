@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 — 2026-11-05
 - New: the **usage limit** of your Claude plan on the home page — the current 5-hour session and the week (all models, and Opus/Sonnet when your plan has them), each as a bar with the percent used and when it resets, like `/usage` in Claude Code. Read with Claude Code's own sign-in (the token is only sent to Anthropic, never stored), refreshed every 5 minutes or with "Refresh".
 - New: four more CLI themes with other accent colors — CLI Amber, CLI Cyan, CLI Magenta and CLI White (black, monospace, square, like CLI (Terminal), just not green). Choose them like the other themes (Settings → Appearance or Settings menu → Theme).
 - New: Claude is told which project it works on — every session of a project (also questions and routines) gets the project's name, version, kind and folders, plus your own words from Setup → **About the project (for Claude)**, like a system prompt for that app.
