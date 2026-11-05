@@ -54,7 +54,7 @@ const list = s => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boole
 const baseName = p => String(p || '').split(/[\\/]/).filter(Boolean).pop() || p;
 
 /* ================= State ================= */
-const THEMES = ['dark', 'light', 'github', 'github-dark', 'cli'];
+const THEMES = ['dark', 'light', 'github', 'github-dark', 'cli', 'midnight', 'dusk', 'graphite', 'contrast', 'sand', 'rose'];
 const LEVELS = ['read', 'edit', 'commit', 'publish'];
 const DEF = {keys: {}, autoHide: false, lang: 'auto', theme: 'dark', dock: true, view: 'home', project: '', ptab: 'overview', histFilter: 'all'};
 let settings = {...DEF}, booted = false;
@@ -1184,7 +1184,7 @@ const A = {
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },
   settings: () => openSettings(), claudeSettings: () => openSettings('claude'), controlSettings: () => openSettings('control'),
   langAuto: () => setLang('auto'), langEn: () => setLang('en'), langDe: () => setLang('de'),
-  themeDark: () => setTheme('dark'), themeLight: () => setTheme('light'), themeGithub: () => setTheme('github'), themeGithubDark: () => setTheme('github-dark'), themeCli: () => setTheme('cli'),
+  themeDark: () => setTheme('dark'), themeLight: () => setTheme('light'), themeGithub: () => setTheme('github'), themeGithubDark: () => setTheme('github-dark'), themeCli: () => setTheme('cli'), themeMidnight: () => setTheme('midnight'), themeDusk: () => setTheme('dusk'), themeGraphite: () => setTheme('graphite'), themeContrast: () => setTheme('contrast'), themeSand: () => setTheme('sand'), themeRose: () => setTheme('rose'),
   shortcuts: () => {
     let h = '';
     MENUS.forEach(([m, items]) => {
@@ -1208,7 +1208,7 @@ const MENUS = [
     ['langAuto', null, () => settings.lang === 'auto'], ['langEn', null, () => settings.lang === 'en'], ['langDe', null, () => settings.lang === 'de'],
     '-', '#menu.theme',
     ['themeDark', null, () => settings.theme === 'dark'], ['themeLight', null, () => settings.theme === 'light'],
-    ['themeGithub', null, () => settings.theme === 'github'], ['themeGithubDark', null, () => settings.theme === 'github-dark'], ['themeCli', null, () => settings.theme === 'cli']]],
+    ['themeGithub', null, () => settings.theme === 'github'], ['themeGithubDark', null, () => settings.theme === 'github-dark'], ['themeCli', null, () => settings.theme === 'cli'], ['themeMidnight', null, () => settings.theme === 'midnight'], ['themeDusk', null, () => settings.theme === 'dusk'], ['themeGraphite', null, () => settings.theme === 'graphite'], ['themeContrast', null, () => settings.theme === 'contrast'], ['themeSand', null, () => settings.theme === 'sand'], ['themeRose', null, () => settings.theme === 'rose']]],
   ['help', [['shortcuts', 'F1'], '-', ['about']]]
 ];
 const allowed = act => (act !== 'stopAll' || data.running.length > 0) && (act !== 'openFull' || !!full || !!(sel && sel.type === 'run' && runOf(sel.id))) && (act !== 'runSel' || !!(sel && (sel.type === 'routine' || sel.type === 'run')))
