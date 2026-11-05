@@ -13,6 +13,7 @@ mod project;
 mod shared;
 mod slash;
 mod todo;
+mod usage;
 
 use serde::{Deserialize, Serialize};
 use std::{fs, io::BufRead, path::Path};
@@ -68,6 +69,12 @@ async fn claude_status(own: String) -> ClaudeInfo {
     let version = run(&["--version"]);
     let status = serde_json::from_str(&run(&["auth", "status"])).unwrap_or(serde_json::Value::Null);
     ClaudeInfo { path: Some(p.to_string_lossy().into_owned()), version, status }
+}
+
+/// The usage limits of the Claude plan (5 hours, week …) for the dashboard.
+#[tauri::command]
+async fn claude_usage() -> usage::Usage {
+    tauri::async_runtime::spawn_blocking(usage::fetch).await.unwrap_or_default()
 }
 
 #[derive(Serialize)]
@@ -456,6 +463,7 @@ fn main() {
             config_load,
             config_save,
             claude_status,
+            claude_usage,
             codex_status,
             codex_login,
             login_start,

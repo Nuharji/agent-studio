@@ -665,5 +665,21 @@
  "todo.tickHint": "Agent Studio hakt einen Punkt ab, wenn Claude ihn erledigt hat",
  "tpl.review": "Tägliches Code-Review",
  "tpl.review.desc": "Prüft am Feierabend die Änderungen des Tages und meldet Fehler, ohne etwas zu ändern.",
- "tpl.review.prompt": "Prüfe die Änderungen von heute in diesem Projekt (die Commits seit gestern und was noch nicht committet ist). Ändere nichts. Nenne echte Fehler mit Datei und Zeile, die wichtigsten zuerst; wenn alles gut aussieht, sag das kurz."
+ "tpl.review.prompt": "Prüfe die Änderungen von heute in diesem Projekt (die Commits seit gestern und was noch nicht committet ist). Ändere nichts. Nenne echte Fehler mit Datei und Zeile, die wichtigsten zuerst; wenn alles gut aussieht, sag das kurz.",
+ "lim.title": "Nutzungslimit von Claude",
+ "lim.five_hour": "Aktuelle Sitzung (5 Std.)",
+ "lim.seven_day": "Diese Woche (alle Modelle)",
+ "lim.seven_day_opus": "Diese Woche (Opus)",
+ "lim.seven_day_sonnet": "Diese Woche (Sonnet)",
+ "lim.seven_day_oauth_apps": "Diese Woche (Apps)",
+ "lim.used": "{n} % genutzt",
+ "lim.resets": "Wieder frei: {w}",
+ "lim.asOf": "Stand {t}",
+ "lim.loading": "Wird geladen …",
+ "lim.err.noLogin": "Kein Claude-Abo gefunden — das Limit gibt es nur bei einer Anmeldung mit Claude Pro oder Max (nicht mit einem API-Schlüssel).",
+ "lim.err.expired": "Die Anmeldung ist abgelaufen — nach dem nächsten Lauf mit Claude wird das Limit wieder angezeigt.",
+ "lim.err.curl": "Das Limit kann nicht abgefragt werden (curl fehlt).",
+ "lim.err.answer": "Anthropic hat kein Limit geschickt.",
+ "lim.err.other": "Das Limit konnte nicht abgefragt werden: {e}",
+ "a.refreshUsage": "Aktualisieren"
 }

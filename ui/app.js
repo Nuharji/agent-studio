@@ -1179,6 +1179,7 @@ const A = {
   runSel: () => { if (sel && sel.type === 'routine') startRoutine(routineOf(sel.id)); else if (sel && sel.type === 'run' && runOf(sel.id)) startRun({...firstOf(runOf(sel.id)).spec, resume: null, continues: null, allowOnce: []}); },
   dismissDone: async () => { const ids = data.inbox.filter(i => i.kind === 'done' || i.kind === 'problem').map(i => i.id); if (ids.length) { await invoke('inbox_dismiss', {ids}); refresh(); } },
   clearHistory: async () => { if (await ask(t('a.clearHistory'), t('hist.clearAsk'), t('a.clearHistory'))) { await invoke('runs_clear'); sel = null; refresh(); } },
+  refreshUsage: () => loadUsage(true).then(() => renderView()),
   viewHome: () => setView('home'), viewInbox: () => setView('inbox'), viewRoutines: () => setView('routines'), viewHistory: () => setView('history'), viewChats: () => setView('chats'),
   togglePanels: () => { settings.dock = !settings.dock; applySettings(); },
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },

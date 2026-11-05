@@ -665,5 +665,21 @@
  "todo.tickHint": "Agent Studio ticks an item when Claude has done it",
  "tpl.review": "Daily code review",
  "tpl.review.desc": "Reviews the day's changes in the evening and reports bugs without changing anything.",
- "tpl.review.prompt": "Review today's changes in this project (the commits since yesterday and what is not committed yet). Change nothing. Name real bugs with file and line, the most important first; if all looks good, say so briefly."
+ "tpl.review.prompt": "Review today's changes in this project (the commits since yesterday and what is not committed yet). Change nothing. Name real bugs with file and line, the most important first; if all looks good, say so briefly.",
+ "lim.title": "Claude usage limit",
+ "lim.five_hour": "Current session (5 h)",
+ "lim.seven_day": "This week (all models)",
+ "lim.seven_day_opus": "This week (Opus)",
+ "lim.seven_day_sonnet": "This week (Sonnet)",
+ "lim.seven_day_oauth_apps": "This week (apps)",
+ "lim.used": "{n} % used",
+ "lim.resets": "Resets {w}",
+ "lim.asOf": "As of {t}",
+ "lim.loading": "Loading …",
+ "lim.err.noLogin": "No Claude plan found — the limit only exists when signed in with Claude Pro or Max (not with an API key).",
+ "lim.err.expired": "The sign-in has expired — the limit shows again after the next run with Claude.",
+ "lim.err.curl": "The limit can't be read (curl is missing).",
+ "lim.err.answer": "Anthropic sent no limit.",
+ "lim.err.other": "The limit couldn't be read: {e}",
+ "a.refreshUsage": "Refresh"
 }

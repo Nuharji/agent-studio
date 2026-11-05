@@ -125,7 +125,7 @@ function viewHome() {
   const ps = cfg.projects || [], running = data.runs.filter(r => isRunning(r.id)), need = needItems();
   let h = `<div class="view-title"><h1>${esc(t('v.home'))}</h1><span class="sub">${esc(t('home.sub'))}</span><span class="flex"></span>
     <button class="btn-sm" data-act="addProject">${esc(t('a.addProject'))}</button><button class="btn-sm primary" data-act="newApp">${esc(t('a.newApp'))}</button></div>`;
-  h += signInHint();
+  h += signInHint() + usageCard();
   if (!ps.length) return h + `<div class="empty-big"><div class="big-tile">Ag</div><h2>${esc(t('home.emptyTitle'))}</h2><p>${esc(t('home.empty'))}</p>
     <div class="it-actions"><button class="btn-sm primary" data-act="newApp">${esc(t('a.newApp'))}</button><button class="btn-sm" data-act="addProject">${esc(t('a.addProject'))}</button><button class="btn-sm" data-act="newChat">${esc(t('a.newChat'))}</button></div></div>`;
   if (need.length) h += `<div class="pcard approval home-need" data-act="viewInbox"><b>${esc(tn('inbox.count', need.length))}</b> <span class="meta">${esc(need.slice(0, 3).map(i => i.title).join(' · '))}</span><span class="flex"></span><button class="btn-sm primary">${esc(t('inbox.open'))}</button></div>`;
@@ -134,6 +134,31 @@ function viewHome() {
   const recent = data.runs.filter(r => r.spec.project && !r.spec.continues).slice(0, 8);
   if (recent.length) h += `<div class="group-h">${esc(t('home.recent'))}</div><div class="pcard">${recent.map(r => runRow(lastOf(r), true)).join('')}</div>`;
   return h;
+}
+/* ---- The usage limits of the Claude plan (5 hours, week …), read again every 5 minutes while the home is open ---- */
+let limits = {list: [], error: '', at: 0, busy: false};
+async function loadUsage(force) {
+  if (!invoke || limits.busy || (!force && Date.now() - limits.at < 300000)) return;
+  limits.busy = true;
+  const u = await invoke('claude_usage').catch(e => ({limits: [], error: String(e)}));
+  limits = {list: u.limits || [], error: u.error || '', at: Date.now(), busy: false};
+  if (settings.view === 'home' && !typing()) renderView();
+}
+function usageCard() {
+  if (!invoke || !claude.path || !(claude.status && claude.status.loggedIn)) return '';
+  loadUsage();
+  const name = k => I18N.en['lim.' + k] ? t('lim.' + k) : k.replace(/_/g, ' ');
+  const bars = limits.list.map(l => {
+    const pc = Math.round(l.percent), cls = pc >= 90 ? ' hi' : pc >= 70 ? ' mid' : '';
+    const at = l.resetsAt && Date.parse(l.resetsAt);
+    return `<div class="lim${cls}"><div class="lim-h"><b>${esc(name(l.key))}</b><span class="flex"></span><span>${esc(t('lim.used', {n: pc}))}</span></div>
+      <div class="usage"><i style="width:${Math.min(100, l.percent)}%"></i></div>${at ? `<span class="meta">${esc(t('lim.resets', {w: fmtWhen(at)}))}</span>` : ''}</div>`;
+  }).join('');
+  const err = limits.error && (I18N.en['lim.err.' + limits.error] ? t('lim.err.' + limits.error) : t('lim.err.other', {e: limits.error}));
+  const body = bars || `<p class="hint">${esc(err || t('lim.loading'))}</p>`;
+  return `<div class="pcard home-usage"><h2>${esc(t('lim.title'))}<span class="flex"></span>${limits.at ? `<span class="meta" style="text-transform:none;letter-spacing:0">${esc(t('lim.asOf', {t: new Date(limits.at).toLocaleTimeString(locale(), {hour: '2-digit', minute: '2-digit'})}))}</span>` : ''}
+    <button class="btn-sm" data-act="refreshUsage"${limits.busy ? ' disabled' : ''}>${esc(t('a.refreshUsage'))}</button></h2>
+    ${bars ? `<div class="lim-grid">${bars}</div>${err ? `<p class="hint">${esc(err)}</p>` : ''}` : body}</div>`;
 }
 function projCard(p) {
   const i = info[p.id] || {}, g = i.git, todo = openTodos(p).length, nd = projNeeds(p.id);
