@@ -122,7 +122,7 @@ async function startRoutine(r, manual = true) {
   if (!(r.dirs || []).length) { toast(t('rt.noDirs')); sel = {type: 'routine', id: r.id}; setView('routines'); return; }
   if (!String(r.prompt || '').trim()) { toast(t('rt.noPrompt')); sel = {type: 'routine', id: r.id}; setView('routines'); return; }
   r.lastRun = Date.now(); saveCfg();
-  const id = await startRun(specFrom(r, rp ? {project: rp.id, work: 'routine'} : {}), {show: manual, manual});
+  const id = await startRun(specFrom(r, rp ? {project: rp.id, ...projectCtx(rp), work: 'routine'} : {}), {show: manual, manual});
   if (id && !manual) toast(t('rt.started', {name: r.name}));
 }
 async function stopRun(id) { if (invoke) { await invoke('run_stop', {id}); toast(t('run.stopping')); } }
@@ -862,7 +862,7 @@ function fieldInput(e) {
     if (!o || key === 'task') return;
     o[f] = f === 'maxMinutes' ? Math.max(0, +e.target.value || 0) : e.target.value;
     saveCfg();
-    if (f === 'name' || f === 'todoFile') { if (key.startsWith('p:')) renderSide(); else renderView(); }
+    if (f === 'name' || f === 'todoFile' || f === 'short') { if (key.startsWith('p:')) renderSide(); else renderView(); }
   }
 }
 $('#details').addEventListener('input', fieldInput);
@@ -1451,7 +1451,9 @@ window.addEventListener('keydown', e => {
   if (typing() && ['Ctrl+Z', 'Ctrl+Y', 'Ctrl+Shift+Z', 'Delete', 'Backspace', 'Ctrl+A'].includes(combo)) return;
   if ($('#modal').classList.contains('show')) return;
   const act = KEYMAP[combo];
-  if (act) { e.preventDefault(); e.stopPropagation(); run(act); }
+  if (act) { e.preventDefault(); e.stopPropagation(); run(act); return; }
+  const kp = projectByKey(combo);   // a project's own shortcut (its Setup)
+  if (kp) { e.preventDefault(); e.stopPropagation(); openProject(kp.id); }
 }, true);
 
 /* Native right-click menus (native.js) */

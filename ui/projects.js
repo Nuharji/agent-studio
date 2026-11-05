@@ -49,14 +49,47 @@ const projRunning = id => data.runs.some(r => r.spec.project === id && isRunning
 const projNeeds = id => data.inbox.filter(i => (i.kind === 'question' || i.kind === 'approval') && (runOf(i.runId) || {spec: {}}).spec.project === id).length;
 const openTodos = p => p.todo && todos[p.todo] ? (todos[p.todo].items || []).filter(i => !i.done) : [];
 const initials = name => String(name || '?').replace(/studio$/i, '').trim().split(/[\s_-]+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
-const tile = (p, big) => `<span class="ptile${big ? ' big' : ''}" style="--pc:${esc(p.color || COLORS[0])}">${esc(initials(p.name))}</span>`;
+/* The project's tile; while Claude works on the project a ring in its color runs around it. The delay keeps the ring
+   where it was when the view is drawn again (otherwise it would jump back to the start at every refresh). */
+const SPIN_MS = 1600;
+/* The letters on the tile: the person's own abbreviation (Setup), else the initials of the name. */
+const shortOf = p => String(p.short || '').trim().slice(0, 3) || initials(p.name);
+const tile = (p, big) => {
+  const run = projRunning(p.id), s = shortOf(p);
+  return `<span class="ptile${big ? ' big' : ''}${run ? ' working' : ''}${s.length > 2 ? ' three' : ''}" style="--pc:${esc(p.color || COLORS[0])}${run ? `;--ad:-${Date.now() % SPIN_MS}ms` : ''}"${run ? ` title="${esc(t('st.running'))}"` : ''}>${esc(s)}</span>`;
+};
+
+/* ---- A project's own shortcut (Setup): opens the project from anywhere. Recorded by pressing it, like in Settings. ---- */
+let pkeyRec = null, pkeyNote = '';
+const projectByKey = combo => (cfg.projects || []).find(p => p.key && p.key === combo);
+window.addEventListener('keydown', e => {
+  if (!pkeyRec) return;
+  if (!document.querySelector('[data-pkey-rec]')) { pkeyRec = null; return; }   // the Setup was left meanwhile
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const p = projectOf(pkeyRec); pkeyNote = '';
+  if (e.key === 'Escape' || !p) { pkeyRec = null; return renderView(); }
+  if (e.key === 'Backspace' || e.key === 'Delete') { pkeyRec = null; p.key = ''; saveCfg(); return renderView(); }
+  const combo = comboOf(e);
+  if (!Shortcuts.usable(combo) || (e.ctrlKey && e.altKey)) { pkeyNote = t('keys.needMod'); return renderView(); }
+  if (KEYMAP[combo]) { pkeyNote = t('p.keyMenu', {k: fmtKey(combo), a: t('a.' + KEYMAP[combo])}); return renderView(); }
+  pkeyRec = null;
+  const other = projectByKey(combo);
+  if (other && other !== p) { other.key = ''; pkeyNote = t('keys.taken', {k: fmtKey(combo), a: other.name}); }
+  p.key = combo; saveCfg(); renderView();
+}, true);
+/* What Claude is told about the project in every run (runner.rs project_text): name, version, stack, the person's words. */
+const projectCtx = p => {
+  const i = info[p.id] || {};
+  return {projectName: p.name || '', projectVersion: i.version || '', projectStack: i.stack || [], projectDesc: i.description || '', projectAbout: p.about || ''};
+};
 /* The project's profile for a run: its rights, its folders. */
 function projectSpec(p, o = {}) {
   const w = o.work ? workOf(o.work) : null;
   const lv = o.level || (w ? (LEVELS.indexOf(w.level) < LEVELS.indexOf(p.level) || w.k === 'review' || w.k === 'ask' ? w.level : p.level) : p.level);
   return specFrom({...p, id: null, name: '', title: o.title || '', dirs: projDirs(p), level: lv, auto: o.auto ?? p.auto, planOnly: !!o.planOnly,
     model: o.model ?? p.model, rules: [p.rules, o.rules].filter(Boolean).join('\n')},
-    {prompt: o.prompt || '', said: o.said || '', project: p.id, work: o.work || '', chat: !!o.chat, ...(o.todo ? {todo: o.todo} : {})});
+    {prompt: o.prompt || '', said: o.said || '', project: p.id, ...projectCtx(p), work: o.work || '', chat: !!o.chat, ...(o.todo ? {todo: o.todo} : {})});
 }
 
 /* ================= Navigation ================= */
@@ -82,7 +115,7 @@ function renderSide() {
     + list.map(p => {
       const i = info[p.id], ch = i && i.git ? i.git.changes.length : 0, run = projRunning(p.id), nd = projNeeds(p.id);
       return `<button class="sproj${settings.view === 'project' && settings.project === p.id && !full ? ' on' : ''}" data-proj="${esc(p.id)}" title="${esc(p.dir)}">${tile(p)}<span class="sname">${esc(p.name)}</span>
-        ${nd ? `<b class="count">${nd}</b>` : run ? '<span class="dot running"></span>' : ch ? `<span class="sch" title="${esc(tn('p.changesN', ch))}">${ch}</span>` : ''}</button>`;
+        ${nd ? `<b class="count">${nd}</b>` : run ? '' : ch ? `<span class="sch" title="${esc(tn('p.changesN', ch))}">${ch}</span>` : ''}</button>`;
     }).join('')
     + `<button class="snew" data-act="newApp">${ICONS.spark}<span>${esc(t('a.newApp'))}</span></button>`;
 }
@@ -103,10 +136,9 @@ function viewHome() {
   return h;
 }
 function projCard(p) {
-  const i = info[p.id] || {}, g = i.git, todo = openTodos(p).length, run = projRunning(p.id), nd = projNeeds(p.id);
+  const i = info[p.id] || {}, g = i.git, todo = openTodos(p).length, nd = projNeeds(p.id);
   const stack = (i.stack || []).slice(0, 3).map(s => `<span class="chip">${esc(t('stack.' + s))}</span>`).join('');
-  return `<div class="pcard proj-card" data-proj="${esc(p.id)}"><div class="pc-head">${tile(p, true)}<div class="pc-name"><b>${esc(p.name)}</b><span class="meta">${esc(i.version ? 'v' + i.version : '')}${g ? ' · ⎇ ' + esc(g.branch) : ''}</span></div>
-      ${run ? '<span class="dot running"></span>' : ''}</div>
+  return `<div class="pcard proj-card" data-proj="${esc(p.id)}"><div class="pc-head">${tile(p, true)}<div class="pc-name"><b>${esc(p.name)}</b><span class="meta">${esc(i.version ? 'v' + i.version : '')}${g ? ' · ⎇ ' + esc(g.branch) : ''}</span></div></div>
     <div class="chips">${stack}</div>
     <div class="pc-stats">${nd ? `<span class="badge warn">${esc(tn('p.needN', nd))}</span>` : ''}<span>${esc(tn('p.todoN', todo))}</span>${g ? `<span>${esc(tn('p.changesN', g.changes.length))}</span>${g.ahead ? `<span>↑${g.ahead}</span>` : ''}` : `<span class="meta">${esc(t('p.noGit'))}</span>`}</div>
     ${i.exists === false ? `<div class="meta" style="color:var(--danger)">${esc(t('p.missing'))}</div>` : ''}</div>`;
@@ -330,11 +362,16 @@ function pSetup(p) {
   const key = 'p:' + p.id;
   return `<div class="setup-grid"><div class="pcard"><h2>${esc(t('p.setup'))}</h2>
       <div class="ed-field"><label>${esc(t('ed.name'))}</label><input class="field-in" data-f="${key}|name" value="${esc(p.name)}" style="width:100%"></div>
+      <div class="ed-field"><label>${esc(t('p.short'))}</label><div class="chips"><input class="field-in" data-f="${key}|short" value="${esc(p.short || '')}" maxlength="3" placeholder="${esc(initials(p.name))}" style="width:70px"></div>
+        <div class="hint">${esc(t('p.shortHint'))}</div></div>
+      <div class="ed-field"><label>${esc(t('p.key'))}</label><div class="chips"><button class="key-btn${pkeyRec === p.id ? ' rec' : ''}" data-pkey-rec>${pkeyRec === p.id ? esc(t('keys.press')) : p.key ? `<kbd>${esc(fmtKey(p.key))}</kbd>` : '<span class="dim">—</span>'}</button>${p.key ? `<button class="btn-sm" data-pkey-off title="${esc(t('p.keyOff'))}">&#10005;</button>` : ''}</div>
+        <div class="hint">${esc(pkeyNote || t('p.keyHint'))}</div></div>
       <div class="ed-field"><label>${esc(t('p.color'))}</label><div class="colors">${COLORS.map(c => `<button data-pcolor="${c}" class="${p.color === c ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div></div>
       <div class="ed-field"><label>${esc(t('p.folder'))}</label><div class="chips"><span class="fchip" title="${esc(p.dir)}"><span>&lrm;${esc(p.dir)}&lrm;</span></span><button class="btn-sm" data-pdir>${esc(t('p.moveFolder'))}</button></div>
         <div class="hint">${esc(t('p.folderHint'))}</div></div>
       <div class="ed-field"><label>${esc(t('p.extraDirs'))}</label>${dirsField(p.extraDirs || [], key)}<div class="hint">${esc(t('p.extraDirsHint'))}</div></div>
       <div class="ed-field"><label>${esc(t('p.todoFile'))}</label><div class="chips">${p.todo ? `<span class="fchip" title="${esc(p.todo)}"><span>&lrm;${esc(p.todo)}&lrm;</span><button class="x" data-ptodo-off>&#10005;</button></span>` : `<span class="meta">${esc(t('p.noTodo'))}</span>`}<button class="btn-sm" data-ptodo-pick>${esc(t('p.pickTodo'))}</button></div></div>
+      <div class="ed-field"><label>${esc(t('p.about'))}</label><textarea class="small" data-f="${key}|about" placeholder="${esc(t('p.aboutPh'))}">${esc(p.about || '')}</textarea><div class="hint">${esc(t('p.aboutHint'))}</div></div>
       <div class="ed-field"><label>${esc(t('ed.rules'))}</label><textarea class="small" data-f="${key}|rules" placeholder="${esc(t('p.rulesPh'))}">${esc(p.rules || '')}</textarea><div class="hint">${esc(t('p.rulesHint'))}</div></div>
       <p><button class="btn-sm" data-ppin>${esc(t(p.pinned ? 'p.unpin' : 'p.pin'))}</button> <button class="btn-sm" data-premove style="color:var(--danger)">${esc(t('p.remove'))}</button></p></div>
     <div class="pcard"><h2>${esc(t('p.rights'))}</h2><p class="meta" style="margin-top:0">${esc(t('p.rightsHint'))}</p>${rightsFields({...p, dirs: projDirs(p)}, key, true)}</div></div>`;
@@ -436,6 +473,8 @@ async function projectClick(b, e) {
   if (d.ptodoOff !== undefined) { p.todo = ''; saveCfg(); renderView(); return true; }
   if (d.pcolor) { p.color = d.pcolor; saveCfg(); renderAll(); return true; }
   if (d.pdir !== undefined) { const dir = invoke && await invoke('pick_folder'); if (dir) { p.dir = dir; delete info[p.id]; saveCfg(); await loadInfo(p, true); renderAll(); } return true; }
+  if (d.pkeyRec !== undefined) { pkeyRec = pkeyRec === p.id ? null : p.id; pkeyNote = ''; renderView(); return true; }
+  if (d.pkeyOff !== undefined) { p.key = ''; pkeyRec = null; pkeyNote = ''; saveCfg(); renderView(); return true; }
   if (d.ppin !== undefined) { p.pinned = !p.pinned; saveCfg(); renderAll(); return true; }
   if (d.premove !== undefined) {
     if (!await ask(t('p.removeTitle'), t('p.removeAsk', {name: p.name}), t('p.remove'))) return true;

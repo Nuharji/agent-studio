@@ -557,6 +557,19 @@ html[data-l-flex] .main>.side.tools{width:224px}
 .ptile{width:20px;height:20px;border-radius:6px;flex:none;display:inline-grid;place-items:center;color:#fff;font-size:9px;font-weight:800;letter-spacing:-.02em;
   background:linear-gradient(135deg,color-mix(in srgb,var(--pc) 70%,#000),var(--pc))}
 .ptile.big{width:40px;height:40px;border-radius:10px;font-size:15px}
+.ptile.three{font-size:7.5px;letter-spacing:-.04em}.ptile.big.three{font-size:12.5px}
+/* Claude works on the project: a ring in the project's color runs around the tile, the tile breathes a little. */
+.ptile{position:relative}
+.ptile.working{animation:pbreathe 2.4s ease-in-out infinite;animation-delay:var(--ad,0s)}
+.ptile.working::before{content:'';position:absolute;inset:-3px;border-radius:9px;padding:2px;pointer-events:none;
+  background:conic-gradient(from var(--pa,0deg),transparent 0 40%,color-mix(in srgb,var(--pc) 35%,transparent) 60%,var(--pc) 92%,#fff 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  animation:pspin 1.6s linear infinite;animation-delay:var(--ad,0s)}
+.ptile.big.working::before{inset:-4px;border-radius:14px;padding:2.5px}
+@property --pa{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes pspin{to{--pa:360deg}}
+@keyframes pbreathe{50%{box-shadow:0 0 10px 1px color-mix(in srgb,var(--pc) 55%,transparent)}}
+@media (prefers-reduced-motion:reduce){.ptile.working,.ptile.working::before{animation:none}.ptile.working::before{background:var(--pc)}}
 /* Home: the apps */
 .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin-bottom:12px}
 .proj-card{cursor:pointer;margin:0;display:flex;flex-direction:column;gap:8px}

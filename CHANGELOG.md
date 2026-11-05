@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- New: Claude is told which project it works on — every session of a project (also questions and routines) gets the project's name, version, kind and folders, plus your own words from Setup → **About the project (for Claude)**, like a system prompt for that app.
+- New: a project Claude is working on shows a ring in the project's color running around its tile (sidebar, overview, project page) instead of the blinking dot; it stays still with "reduce motion".
+- New: own **abbreviation** (up to three characters on the tile) and an own **shortcut** per project that opens it from anywhere (Setup).
+
 ## 1.3.0 — 2026-11-05
 - New: six themes — Midnight (navy, blue), Dusk (plum, violet), Graphite (neutral gray, orange), High contrast (black, white, yellow — easy to read), Sand (warm beige, terracotta) and Rosé (soft pink, raspberry).
 - New: two layouts — **Focus** (roomy, no status bar, bars and panels without lines, the tool rail fades until you point at it) and **Mirrored** (panels on the left, tool rail on the right). Choose them in Settings → Appearance (the themes also in the Settings menu).

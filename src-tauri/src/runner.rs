@@ -56,6 +56,13 @@ pub struct Spec {
     pub origin: Option<crate::link::Origin>,
     /// The project (app) the run belongs to (its id in the setup).
     pub project: Option<String>,
+    /// What Claude is told about that project (its name, version, stack, the person's own words about it).
+    pub project_name: String,
+    pub project_version: String,
+    pub project_stack: Vec<String>,
+    pub project_desc: String,
+    /// The person's own words about the project (Setup → "About the project"), like a system prompt for it.
+    pub project_about: String,
     /// What kind of work it is ("feature", "fix", "test", "review", "release", "new-app" …), for the history.
     pub work: String,
 }
@@ -134,6 +141,27 @@ fn codex_level_text(s: &Spec, de: bool) -> String {
     t
 }
 
+/// Tells Claude which project (app) it works on: name, version, stack, folders and what the person wrote about it.
+fn project_text(s: &Spec, de: bool) -> String {
+    let name = s.project_name.trim();
+    if name.is_empty() { return String::new(); }
+    let mut facts: Vec<String> = Vec::new();
+    if !s.project_version.trim().is_empty() { facts.push(format!("{} {}", if de { "Version" } else { "version" }, s.project_version.trim())); }
+    let stack: Vec<&str> = s.project_stack.iter().map(|x| x.trim()).filter(|x| !x.is_empty()).collect();
+    if !stack.is_empty() { facts.push(stack.join(", ")); }
+    if let Some(d) = s.dirs.first() { facts.push(format!("{} {d}", if de { "Ordner" } else { "folder" })); }
+    let extra: Vec<&str> = s.dirs.iter().skip(1).map(String::as_str).collect();
+    if !extra.is_empty() { facts.push(format!("{} {}", if de { "weitere Ordner" } else { "more folders" }, extra.join(", "))); }
+    let mut t = if de { format!("Du arbeitest am Projekt „{name}“") } else { format!("You are working on the project \"{name}\"") };
+    if !facts.is_empty() { t += &format!(" ({})", facts.join("; ")); }
+    t.push('.');
+    let desc = s.project_desc.trim();
+    if !desc.is_empty() { t += &format!(" {}{desc}", if de { "Beschreibung: " } else { "Description: " }); }
+    let about = s.project_about.trim();
+    if !about.is_empty() { t += &format!("\n{}\n{about}", if de { "Was die Person über das Projekt sagt:" } else { "What the person says about the project:" }); }
+    t + "\n"
+}
+
 /// Explains to Claude where it runs and how it asks for something (the block Agent Studio reads, see `needs`).
 pub fn system_prompt(s: &Spec) -> String {
     let de = s.lang == "de";
@@ -149,7 +177,7 @@ pub fn system_prompt(s: &Spec) -> String {
     }
     if de {
         format!("Du arbeitest in Agent Studio für die Person, die dich eingerichtet hat — ohne Fenster: Während des Laufs kann dir niemand antworten.
-Deine Rechte in diesem Lauf: {}. Was darüber hinausgeht, wird automatisch abgelehnt und der Person zur Freigabe vorgelegt — versuche dann nicht, es zu umgehen.
+{}Deine Rechte in diesem Lauf: {}. Was darüber hinausgeht, wird automatisch abgelehnt und der Person zur Freigabe vorgelegt — versuche dann nicht, es zu umgehen.
 {}
 Wenn du etwas von der Person brauchst (eine Frage, eine Entscheidung oder eine Freigabe für etwas, das du nicht darfst), höre an dieser Stelle auf und schreibe am Ende deiner Antwort genau einen Block:
 ```agent-studio
@@ -157,10 +185,10 @@ Wenn du etwas von der Person brauchst (eine Frage, eine Entscheidung oder eine F
 ```
 (options darf fehlen; für eine Freigabe \"needs\": \"approval\", in \"text\", was du tun willst, und in \"command\" den genauen Befehl, den du ausführen willst.) Die Antwort kommt als nächste Nachricht.
 Schreibe zum Schluss immer eine kurze Zusammenfassung auf Deutsch: was du getan hast, was geändert wurde, was offen ist.{}",
-            level_text(s, true), if rules.is_empty() { String::new() } else { format!("Regeln der Person:\n{rules}\n") }, todo)
+            project_text(s, true), level_text(s, true), if rules.is_empty() { String::new() } else { format!("Regeln der Person:\n{rules}\n") }, todo)
     } else {
         format!("You work in Agent Studio for the person who set you up — without a window: nobody can answer you during the run.
-Your rights in this run: {}. Anything beyond is refused automatically and shown to the person for approval — don't try to work around it then.
+{}Your rights in this run: {}. Anything beyond is refused automatically and shown to the person for approval — don't try to work around it then.
 {}
 When you need something from the person (a question, a decision, or approval for something you may not do), stop there and end your answer with exactly one block:
 ```agent-studio
@@ -168,7 +196,7 @@ When you need something from the person (a question, a decision, or approval for
 ```
 (options may be left out; for an approval use \"needs\": \"approval\", say in \"text\" what you want to do and give the exact command in \"command\".) The answer comes as the next message.
 Always end with a short summary: what you did, what changed, what is still open.{}",
-            level_text(s, false), if rules.is_empty() { String::new() } else { format!("The person's rules:\n{rules}\n") }, todo)
+            project_text(s, false), level_text(s, false), if rules.is_empty() { String::new() } else { format!("The person's rules:\n{rules}\n") }, todo)
     }
 }
 
@@ -176,24 +204,24 @@ Always end with a short summary: what you did, what changed, what is still open.
 fn chat_prompt(s: &Spec, de: bool, rules: &str) -> String {
     if de {
         format!("Du chattest in Agent Studio mit der Person, die dich eingerichtet hat — ein normales Gespräch wie in der Claude-App: Sie liest deine Antwort und antwortet direkt darauf. Stell Rückfragen also einfach in deiner Antwort.
-Deine Rechte in diesem Chat: {}. Was darüber hinausgeht, wird automatisch abgelehnt — versuche dann nicht, es zu umgehen.
+{}Deine Rechte in diesem Chat: {}. Was darüber hinausgeht, wird automatisch abgelehnt — versuche dann nicht, es zu umgehen.
 {}
 Brauchst du eine Freigabe für etwas, das du nicht darfst, schreibe am Ende deiner Antwort genau einen Block:
 ```agent-studio
 {{\"needs\": \"approval\", \"text\": \"was du tun willst\", \"command\": \"der genaue Befehl\"}}
 ```
 Antworte auf Deutsch, so ausführlich wie nötig und so kurz wie möglich; eine Zusammenfassung am Ende brauchst du nicht.",
-            level_text(s, true), if rules.is_empty() { String::new() } else { format!("Regeln der Person:\n{rules}\n") })
+            project_text(s, true), level_text(s, true), if rules.is_empty() { String::new() } else { format!("Regeln der Person:\n{rules}\n") })
     } else {
         format!("You are chatting in Agent Studio with the person who set you up — a normal conversation like in the Claude app: they read your answer and reply to it directly. So just ask follow-up questions in your answer.
-Your rights in this chat: {}. Anything beyond is refused automatically — don't try to work around it then.
+{}Your rights in this chat: {}. Anything beyond is refused automatically — don't try to work around it then.
 {}
 When you need approval for something you may not do, end your answer with exactly one block:
 ```agent-studio
 {{\"needs\": \"approval\", \"text\": \"what you want to do\", \"command\": \"the exact command\"}}
 ```
 Answer as fully as needed and as briefly as possible; no summary at the end is needed.",
-            level_text(s, false), if rules.is_empty() { String::new() } else { format!("The person's rules:\n{rules}\n") })
+            project_text(s, false), level_text(s, false), if rules.is_empty() { String::new() } else { format!("The person's rules:\n{rules}\n") })
     }
 }
 
@@ -613,6 +641,25 @@ mod tests {
         assert!(!p.contains("Zusammenfassung auf Deutsch: was du getan hast"), "no summary for a chat");
         s.lang = "en".into();
         assert!(system_prompt(&s).contains("normal conversation"));
+    }
+
+    #[test]
+    fn claude_is_told_which_project_it_works_on() {
+        let mut s = spec("edit");
+        assert!(!system_prompt(&s).contains("Projekt „"), "no project, no line");
+        s.project_name = "Agent Studio".into();
+        s.project_version = "1.3.0".into();
+        s.project_stack = vec!["tauri".into(), "rust".into()];
+        s.project_desc = "Apps bauen mit KI".into();
+        s.project_about = "Die UI ist reines HTML/JS in ui/.".into();
+        let p = system_prompt(&s);
+        assert!(p.contains("Du arbeitest am Projekt „Agent Studio“ (Version 1.3.0; tauri, rust; Ordner /a; weitere Ordner /b)."), "{p}");
+        assert!(p.contains("Beschreibung: Apps bauen mit KI") && p.contains("Die UI ist reines HTML/JS in ui/."));
+        s.chat = true;
+        assert!(system_prompt(&s).contains("Projekt „Agent Studio“"), "a project chat knows it too");
+        s.chat = false;
+        s.lang = "en".into();
+        assert!(system_prompt(&s).contains("You are working on the project \"Agent Studio\""));
     }
 
     #[test]
