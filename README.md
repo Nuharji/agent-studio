@@ -21,6 +21,9 @@ API key and no password; routines, logs and history stay on your computer.
   Question** — each with its own instructions for Claude (reviews and questions read-only, "Plan first" on request);
   open tasks, sessions, commands, last commits and the documents beside it. Tabs: Overview, Tasks, Sessions, Commands,
   Changes, Setup (Ctrl+1 … Ctrl+5).
+- **Projects that are no code:** a project of the kind *Documents & more* (texts, school, research, notes …) has the
+  kinds of work Write, Revise, Research, Summarize, Organize, Feedback and Question, and no commands; a folder without
+  code becomes one by itself (Setup → Kind of project).
 - **Commands**: build, test, start the app or any command — run by Agent Studio itself in the project folder (login
   shell), with live output; a failed one goes to Claude with "Let Claude fix it". Ctrl+B, Ctrl+Shift+T, Ctrl+Shift+R.
 - **Changes**: what is not committed yet, with the diff; let Claude review it (read-only), commit it or push it.

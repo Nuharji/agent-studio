@@ -18,10 +18,27 @@ const WORK = [
   {k: 'release', level: 'publish', icon: '🚀'},
   {k: 'ask', level: 'read', icon: '?'},
 ];
-const workOf = k => WORK.find(w => w.k === k) || WORK[0];
-const newProject = (dir, info = {}) => ({id: uid(), name: info.name || baseName(dir), dir, extraDirs: [], color: COLORS[cfg.projects.length % COLORS.length],
-  todo: (info.todo || [])[0] || '', tick: false, level: 'commit', commands: defaultAllowed(info), web: true, auto: true, noDelete: true, maxMinutes: 60, model: '',
-  rules: '', cmds: [], created: Date.now(), opened: Date.now()});
+/* Projects that are no code (texts, school, research, notes …): their own kinds of work, no commands. */
+const WORK_DOCS = [
+  {k: 'write', level: 'edit', icon: '✍'},
+  {k: 'revise', level: 'edit', icon: '✎'},
+  {k: 'research', level: 'edit', icon: '🔎'},
+  {k: 'summarize', level: 'edit', icon: '📝'},
+  {k: 'organize', level: 'edit', icon: '🗂'},
+  {k: 'feedback', level: 'read', icon: '👁'},
+  {k: 'ask', level: 'read', icon: '?'},
+];
+const isDocs = p => !!p && p.kind === 'docs';
+const worksOf = p => isDocs(p) ? WORK_DOCS : WORK;
+const workOf = k => WORK.find(w => w.k === k) || WORK_DOCS.find(w => w.k === k) || WORK[0];
+/* A folder without code (no stack, no apps in it) becomes a project of documents. */
+const kindOf = info => (info.stack || []).length || (info.apps || []).length || (info.commands || []).length ? 'app' : 'docs';
+const newProject = (dir, info = {}) => {
+  const kind = info.stack ? kindOf(info) : 'app';
+  return {id: uid(), name: info.name || baseName(dir), dir, extraDirs: [], color: COLORS[cfg.projects.length % COLORS.length], kind,
+    todo: (info.todo || [])[0] || '', tick: false, level: kind === 'docs' ? 'edit' : 'commit', commands: defaultAllowed(info), web: true, auto: true, noDelete: true, maxMinutes: 60, model: '',
+    rules: '', cmds: [], created: Date.now(), opened: Date.now()};
+};
 /* The commands Claude may run in a new project: the ones that build and test it. */
 const defaultAllowed = info => (info.commands || []).filter(c => ['build', 'test', 'lint', 'check'].includes(c.kind)).map(c => c.cmd).join(', ');
 const projectOf = id => (cfg.projects || []).find(p => p.id === id);
@@ -81,12 +98,12 @@ window.addEventListener('keydown', e => {
 /* What Claude is told about the project in every run (runner.rs project_text): name, version, stack, the person's words. */
 const projectCtx = p => {
   const i = info[p.id] || {};
-  return {projectName: p.name || '', projectVersion: i.version || '', projectStack: i.stack || [], projectDesc: i.description || '', projectAbout: p.about || ''};
+  return {projectName: p.name || '', projectVersion: i.version || '', projectStack: isDocs(p) ? [t('p.kindDocsClaude')] : i.stack || [], projectDesc: i.description || '', projectAbout: p.about || ''};
 };
 /* The project's profile for a run: its rights, its folders. */
 function projectSpec(p, o = {}) {
   const w = o.work ? workOf(o.work) : null;
-  const lv = o.level || (w ? (LEVELS.indexOf(w.level) < LEVELS.indexOf(p.level) || w.k === 'review' || w.k === 'ask' ? w.level : p.level) : p.level);
+  const lv = o.level || (w ? (LEVELS.indexOf(w.level) < LEVELS.indexOf(p.level) || ['review', 'ask', 'feedback'].includes(w.k) ? w.level : p.level) : p.level);
   return specFrom({...p, id: null, name: '', title: o.title || '', dirs: projDirs(p), level: lv, auto: o.auto ?? p.auto, planOnly: !!o.planOnly,
     model: o.model ?? p.model, rules: [p.rules, o.rules].filter(Boolean).join('\n')},
     {prompt: o.prompt || '', said: o.said || '', project: p.id, ...projectCtx(p), work: o.work || '', chat: !!o.chat, ...(o.todo ? {todo: o.todo} : {})});
@@ -95,10 +112,12 @@ function projectSpec(p, o = {}) {
 /* ================= Navigation ================= */
 /* settings.view: 'home' | 'project' | 'inbox' | 'chats' | 'routines' | 'history'; settings.project, settings.ptab. */
 const PTABS = ['overview', 'tasks', 'sessions', 'commands', 'changes', 'setup'];
+/* A project of documents has no commands, and changes only with git. */
+const ptabsOf = p => isDocs(p) ? PTABS.filter(k => k !== 'commands' && (k !== 'changes' || (info[p.id] || {}).git)) : PTABS;
 function openProject(id, tab) {
   const p = projectOf(id); if (!p) return;
   settings.view = 'project'; settings.project = id; if (tab) settings.ptab = tab;
-  if (!PTABS.includes(settings.ptab)) settings.ptab = 'overview';
+  if (!ptabsOf(p).includes(settings.ptab)) settings.ptab = 'overview';
   p.opened = Date.now(); full = null; saveSettings(); saveCfg();
   renderAll();
   loadInfo(p, true).then(() => { if (settings.view === 'project' && settings.project === id) renderView(); renderSide(); });
@@ -164,8 +183,8 @@ function projCard(p) {
   const i = info[p.id] || {}, g = i.git, todo = openTodos(p).length, nd = projNeeds(p.id);
   const stack = (i.stack || []).slice(0, 3).map(s => `<span class="chip">${esc(t('stack.' + s))}</span>`).join('');
   return `<div class="pcard proj-card" data-proj="${esc(p.id)}"><div class="pc-head">${tile(p, true)}<div class="pc-name"><b>${esc(p.name)}</b><span class="meta">${esc(i.version ? 'v' + i.version : '')}${g ? ' · ⎇ ' + esc(g.branch) : ''}</span></div></div>
-    <div class="chips">${stack}</div>
-    <div class="pc-stats">${nd ? `<span class="badge warn">${esc(tn('p.needN', nd))}</span>` : ''}<span>${esc(tn('p.todoN', todo))}</span>${g ? `<span>${esc(tn('p.changesN', g.changes.length))}</span>${g.ahead ? `<span>↑${g.ahead}</span>` : ''}` : `<span class="meta">${esc(t('p.noGit'))}</span>`}</div>
+    <div class="chips">${isDocs(p) ? `<span class="chip">${esc(t('p.kind.docs'))}</span>` : stack}</div>
+    <div class="pc-stats">${nd ? `<span class="badge warn">${esc(tn('p.needN', nd))}</span>` : ''}<span>${esc(tn('p.todoN', todo))}</span>${g ? `<span>${esc(tn('p.changesN', g.changes.length))}</span>${g.ahead ? `<span>↑${g.ahead}</span>` : ''}` : isDocs(p) ? '' : `<span class="meta">${esc(t('p.noGit'))}</span>`}</div>
     ${i.exists === false ? `<div class="meta" style="color:var(--danger)">${esc(t('p.missing'))}</div>` : ''}</div>`;
 }
 /* One run in a list (home, overview, sessions). */
@@ -184,21 +203,22 @@ function viewProject() {
   const g = i && i.git, nd = projNeeds(p.id);
   const head = `<div class="proj-head">${tile(p, true)}<div class="ph-main"><h1>${esc(p.name)}</h1>
       <div class="meta ph-sub">${i && i.version ? `<span>v${esc(i.version)}</span>` : ''}${(i && i.stack || []).map(s => `<span class="chip">${esc(t('stack.' + s))}</span>`).join('')}
-        ${g ? `<span title="${esc(g.remote)}">⎇ ${esc(g.branch)}</span>${g.tag ? `<span>🏷 ${esc(g.tag)}</span>` : ''}${g.ahead ? `<span class="badge warn" title="${esc(t('p.aheadHint'))}">↑ ${g.ahead}</span>` : ''}${g.behind ? `<span class="badge">↓ ${g.behind}</span>` : ''}` : `<span>${esc(t('p.noGit'))}</span>`}
+        ${g ? `<span title="${esc(g.remote)}">⎇ ${esc(g.branch)}</span>${g.tag ? `<span>🏷 ${esc(g.tag)}</span>` : ''}${g.ahead ? `<span class="badge warn" title="${esc(t('p.aheadHint'))}">↑ ${g.ahead}</span>` : ''}${g.behind ? `<span class="badge">↓ ${g.behind}</span>` : ''}` : isDocs(p) ? `<span>${esc(t('p.kind.docs'))}</span>` : `<span>${esc(t('p.noGit'))}</span>`}
         <span class="pdir" title="${esc(p.dir)}">${esc(p.dir)}</span></div></div><span class="flex"></span>
       <button class="btn-sm" data-popen="${esc(p.dir)}" title="${esc(t('p.openDirHint'))}">${esc(t('p.openDir'))}</button><button class="btn-sm" data-reveal="${esc(p.dir)}">${esc(t('ui.show'))}</button></div>
     ${i && i.exists === false ? `<div class="pcard problem"><b>${esc(t('p.missing'))}</b> <span class="meta">${esc(p.dir)}</span> <button class="btn-sm" data-ptab="setup">${esc(t('ptab.setup'))}</button></div>` : ''}
-    <div class="ptabs">${PTABS.map(k => `<button class="${settings.ptab === k ? 'on' : ''}" data-ptab="${k}">${esc(t('ptab.' + k))}${k === 'tasks' && openTodos(p).length ? ` <b>${openTodos(p).length}</b>` : ''}${k === 'changes' && g && g.changes.length ? ` <b>${g.changes.length}</b>` : ''}${k === 'sessions' && nd ? ' <b class="warn">!</b>' : ''}</button>`).join('')}</div>`;
-  const body = {overview: pOverview, tasks: pTasks, sessions: pSessions, commands: pCommands, changes: pChanges, setup: pSetup}[settings.ptab] || pOverview;
+    <div class="ptabs">${ptabsOf(p).map(k => `<button class="${settings.ptab === k ? 'on' : ''}" data-ptab="${k}">${esc(t('ptab.' + k))}${k === 'tasks' && openTodos(p).length ? ` <b>${openTodos(p).length}</b>` : ''}${k === 'changes' && g && g.changes.length ? ` <b>${g.changes.length}</b>` : ''}${k === 'sessions' && nd ? ' <b class="warn">!</b>' : ''}</button>`).join('')}</div>`;
+  const body = {overview: pOverview, tasks: pTasks, sessions: pSessions, commands: pCommands, changes: pChanges, setup: pSetup}[ptabsOf(p).includes(settings.ptab) ? settings.ptab : 'overview'];
   return head + body(p, i || {});
 }
 
 /* ---- Overview: the box, open to-dos, sessions, commands, commits ---- */
 const pDraft = {};        // project id → {text, work, plan}
 function workBox(p) {
-  const d = pDraft[p.id] || (pDraft[p.id] = {text: '', work: 'feature', plan: false});
+  const d = pDraft[p.id] || (pDraft[p.id] = {text: '', work: worksOf(p)[0].k, plan: false});
+  if (!worksOf(p).some(x => x.k === d.work)) d.work = worksOf(p)[0].k;
   const w = workOf(d.work), sp = projectSpec(p, {work: d.work});
-  return `<div class="composer work-box"><div class="work-chips">${WORK.map(x => `<button class="wchip${d.work === x.k ? ' on' : ''}" data-work="${x.k}" title="${esc(t('work.' + x.k + '.hint'))}">${esc(x.icon)} ${esc(t('work.' + x.k))}</button>`).join('')}</div>
+  return `<div class="composer work-box"><div class="work-chips">${worksOf(p).map(x => `<button class="wchip${d.work === x.k ? ' on' : ''}" data-work="${x.k}" title="${esc(t('work.' + x.k + '.hint'))}">${esc(x.icon)} ${esc(t('work.' + x.k))}</button>`).join('')}</div>
     <textarea id="workIn" rows="2" data-work-in="${esc(p.id)}" data-grow placeholder="${esc(t('work.' + w.k + '.ph', {name: p.name}))}">${esc(d.text)}</textarea>
     <div class="composer-bar"><span class="composer-tag" title="${esc(t('lv.' + sp.level + '.hint'))}">${esc(t('lv.' + sp.level))}${sp.auto ? ' · ' + esc(t('ed.autoShort')) : ''}${sp.web ? ' · 🌐' : ''}</span>
       <span class="composer-chip${d.plan ? ' on' : ''}"><button data-work-plan title="${esc(t('ed.planOnly'))}">📋 ${esc(t('work.planOnly'))}</button></span>
@@ -221,7 +241,7 @@ function pOverview(p, i) {
       const r = runForItem(p.todo, it.text), st = r ? stOf(r) : '';
       return `<div class="row"><span class="grow" title="${esc(it.text)}">${esc(it.text)}</span>${st ? statusBadge(st) : ''}${st !== 'running' ? `<button class="btn-sm" data-doitem="${esc(p.todo)}" data-line="${it.line}">${esc(st ? t('todo.again') : t('todo.do'))}</button>` : ''}</div>`;
     }).join('') : `<div class="empty-s">${esc(t('p.todoDone'))}</div>`}</div>`;
-  h += `<div class="pcard"><h2>${esc(t('ptab.commands'))}<span class="flex"></span><button class="btn-sm" data-ptab="commands">${esc(t('p.all'))}</button></h2>
+  if (!isDocs(p)) h += `<div class="pcard"><h2>${esc(t('ptab.commands'))}<span class="flex"></span><button class="btn-sm" data-ptab="commands">${esc(t('p.all'))}</button></h2>
     ${cmds.length ? `<div class="cmd-quick">${cmds.slice(0, 5).map(c => cmdButton(p, c)).join('')}</div>` : `<div class="empty-s">${esc(t('p.noCmds'))}</div>`}</div>`;
   if (g) h += `<div class="pcard"><h2>${esc(t('p.git'))}<span class="flex"></span>${g.changes.length ? `<button class="btn-sm" data-ptab="changes">${esc(tn('p.changesN', g.changes.length))}</button>` : ''}</h2>
     ${g.log.slice(0, 6).map(l => { const [hash, msg, when] = l.split('|'); return `<div class="commit"><code>${esc(hash)}</code><span class="grow">${esc(msg)}</span><span class="meta">${esc(when)}</span></div>`; }).join('') || `<div class="empty-s">${esc(t('p.noCommits'))}</div>`}</div>`;
@@ -232,7 +252,7 @@ async function startWork(id) {
   const p = projectOf(id), d = pDraft[id]; if (!p || !d) return;
   const text = d.text.trim(); if (!text) return $('#workIn') && $('#workIn').focus();
   const w = workOf(d.work);
-  const prompt = t('work.' + w.k + '.prompt', {name: p.name, text});
+  const prompt = t('work.' + w.k + (isDocs(p) && w.k === 'ask' ? '.docsPrompt' : '.prompt'), {name: p.name, text});
   const title = text.split('\n')[0].replace(/\s+/g, ' ').slice(0, 70);
   const rid = await startRun(projectSpec(p, {work: w.k, title, prompt, said: text, planOnly: d.plan, chat: w.k === 'ask'}), {show: false});
   if (!rid) return;
@@ -391,6 +411,8 @@ function pSetup(p) {
         <div class="hint">${esc(t('p.shortHint'))}</div></div>
       <div class="ed-field"><label>${esc(t('p.key'))}</label><div class="chips"><button class="key-btn${pkeyRec === p.id ? ' rec' : ''}" data-pkey-rec>${pkeyRec === p.id ? esc(t('keys.press')) : p.key ? `<kbd>${esc(fmtKey(p.key))}</kbd>` : '<span class="dim">—</span>'}</button>${p.key ? `<button class="btn-sm" data-pkey-off title="${esc(t('p.keyOff'))}">&#10005;</button>` : ''}</div>
         <div class="hint">${esc(pkeyNote || t('p.keyHint'))}</div></div>
+      <div class="ed-field"><label>${esc(t('p.kind'))}</label><div class="lvl">${['app', 'docs'].map(k => `<button class="${(p.kind || 'app') === k ? 'on' : ''}" data-pkind="${k}">${esc(t('p.kind.' + k))}</button>`).join('')}</div>
+        <div class="hint">${esc(t('p.kind.' + (p.kind || 'app') + '.hint'))}</div></div>
       <div class="ed-field"><label>${esc(t('p.color'))}</label><div class="colors">${COLORS.map(c => `<button data-pcolor="${c}" class="${p.color === c ? 'on' : ''}" style="background:${c}"></button>`).join('')}</div></div>
       <div class="ed-field"><label>${esc(t('p.folder'))}</label><div class="chips"><span class="fchip" title="${esc(p.dir)}"><span>&lrm;${esc(p.dir)}&lrm;</span></span><button class="btn-sm" data-pdir>${esc(t('p.moveFolder'))}</button></div>
         <div class="hint">${esc(t('p.folderHint'))}</div></div>
@@ -497,6 +519,7 @@ async function projectClick(b, e) {
   if (d.ptodoPick !== undefined) { const paths = invoke ? await invoke('pick_files', {filterName: 'Markdown', exts: ['md', 'markdown', 'txt']}) : []; if (paths[0]) { p.todo = paths[0]; saveCfg(); await loadTodo(p.todo); renderView(); } return true; }
   if (d.ptodoOff !== undefined) { p.todo = ''; saveCfg(); renderView(); return true; }
   if (d.pcolor) { p.color = d.pcolor; saveCfg(); renderAll(); return true; }
+  if (d.pkind) { p.kind = d.pkind; if (pDraft[p.id]) pDraft[p.id].work = worksOf(p)[0].k; saveCfg(); renderAll(); return true; }
   if (d.pdir !== undefined) { const dir = invoke && await invoke('pick_folder'); if (dir) { p.dir = dir; delete info[p.id]; saveCfg(); await loadInfo(p, true); renderAll(); } return true; }
   if (d.pkeyRec !== undefined) { pkeyRec = pkeyRec === p.id ? null : p.id; pkeyNote = ''; renderView(); return true; }
   if (d.pkeyOff !== undefined) { p.key = ''; pkeyRec = null; pkeyNote = ''; saveCfg(); renderView(); return true; }
