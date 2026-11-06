@@ -714,6 +714,7 @@
  "work.feedback.ph": "What do you want feedback on? (file, what to look at)",
  "work.feedback.prompt": "Give feedback on {name}: {text}\n\nChange nothing. Say what is good, what is unclear or wrong and how to improve it — most important first, with file and place.",
  "work.ask.docsPrompt": "Question about {name}: {text}\n\nLook in the files in the folder and answer precisely, with file and place. Change nothing.",
+ "work.ask.docsHint": "Find something out about the files in the folder — read only",
  "cmd.build": "Build",
  "cmd.test": "Test",
  "cmd.run": "Start",

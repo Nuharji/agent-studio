@@ -218,7 +218,7 @@ function workBox(p) {
   const d = pDraft[p.id] || (pDraft[p.id] = {text: '', work: worksOf(p)[0].k, plan: false});
   if (!worksOf(p).some(x => x.k === d.work)) d.work = worksOf(p)[0].k;
   const w = workOf(d.work), sp = projectSpec(p, {work: d.work});
-  return `<div class="composer work-box"><div class="work-chips">${worksOf(p).map(x => `<button class="wchip${d.work === x.k ? ' on' : ''}" data-work="${x.k}" title="${esc(t('work.' + x.k + '.hint'))}">${esc(x.icon)} ${esc(t('work.' + x.k))}</button>`).join('')}</div>
+  return `<div class="composer work-box"><div class="work-chips">${worksOf(p).map(x => `<button class="wchip${d.work === x.k ? ' on' : ''}" data-work="${x.k}" title="${esc(t('work.' + x.k + (isDocs(p) && x.k === 'ask' ? '.docsHint' : '.hint')))}">${esc(x.icon)} ${esc(t('work.' + x.k))}</button>`).join('')}</div>
     <textarea id="workIn" rows="2" data-work-in="${esc(p.id)}" data-grow placeholder="${esc(t('work.' + w.k + '.ph', {name: p.name}))}">${esc(d.text)}</textarea>
     <div class="composer-bar"><span class="composer-tag" title="${esc(t('lv.' + sp.level + '.hint'))}">${esc(t('lv.' + sp.level))}${sp.auto ? ' · ' + esc(t('ed.autoShort')) : ''}${sp.web ? ' · 🌐' : ''}</span>
       <span class="composer-chip${d.plan ? ' on' : ''}"><button data-work-plan title="${esc(t('ed.planOnly'))}">📋 ${esc(t('work.planOnly'))}</button></span>

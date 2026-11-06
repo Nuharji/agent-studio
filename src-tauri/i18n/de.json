@@ -714,6 +714,7 @@
  "work.feedback.ph": "Wozu möchtest du Rückmeldung? (Datei, worauf achten)",
  "work.feedback.prompt": "Gib Feedback zu {name}: {text}\n\nÄndere nichts. Nenne, was gut ist, was unklar oder falsch ist und wie man es verbessert — das Wichtigste zuerst, mit Datei und Stelle.",
  "work.ask.docsPrompt": "Frage zu {name}: {text}\n\nSchau in den Dateien im Ordner nach und antworte genau, mit Datei und Stelle. Ändere nichts.",
+ "work.ask.docsHint": "Etwas über die Dateien im Ordner wissen — nur lesen",
  "cmd.build": "Bauen",
  "cmd.test": "Testen",
  "cmd.run": "Starten",
