@@ -628,6 +628,9 @@ html[data-l-flex] .main>.side.tools{width:224px}
 .side button.on{background:var(--btn-active-bg);border-color:var(--btn-active-border);color:var(--strong);font-weight:600}
 .side svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .side button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The project tile in the sidebar stays square like everywhere else, and its working ring is not cut off. */
+.side button .ptile{flex:none;width:20px;min-width:20px;overflow:visible;text-overflow:clip;white-space:nowrap}
+.side .sproj{overflow:visible}
 .side .count{min-width:17px;height:17px;padding:0 5px;border-radius:9px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;line-height:17px;text-align:center;flex:none}
 .side-h{display:flex;align-items:center;justify-content:space-between;margin:14px 4px 4px 8px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);font-weight:600}
 .side .side-add{width:22px;min-height:22px;height:22px;padding:0;justify-content:center;font-size:15px;color:var(--dim)}
