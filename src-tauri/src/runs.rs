@@ -351,6 +351,11 @@ pub struct MsgOpts {
     pub plan: bool,
     /// What the person wrote (shown in the chat when the prompt is more, e.g. an expanded command).
     pub said: Option<String>,
+    /// Another effort level (/effort) and output style (/output-style) from now on ("" = the standard one).
+    pub effort: Option<String>,
+    pub output_style: Option<String>,
+    /// More folders from now on (/add-dir).
+    pub add_dirs: Vec<String>,
 }
 
 /// Goes on with a run: an answer, an approval or a further message. The same Claude Code session when there is one.
@@ -372,6 +377,9 @@ pub fn next_spec(r: &Run, prompt: String, allow: Vec<String>, o: MsgOpts) -> Spe
     if spec.plan_once { spec.plan_only = false; spec.plan_once = false; }
     if o.plan && !spec.plan_only { spec.plan_only = true; spec.plan_once = true; }
     if let Some(m) = o.model { spec.model = m.trim().to_string(); }
+    if let Some(e) = o.effort { spec.effort = e.trim().to_string(); }
+    if let Some(s) = o.output_style { spec.output_style = s.trim().to_string(); }
+    for d in o.add_dirs { if !d.trim().is_empty() && !spec.dirs.contains(&d) { spec.dirs.push(d); } }
     spec.said = o.said.unwrap_or_else(|| prompt.clone());
     if o.fresh {
         spec.resume = None;
@@ -460,7 +468,7 @@ mod tests {
         let s = next_spec(&r, "Weiter".into(), vec![], MsgOpts::default());
         assert_eq!((s.resume.as_deref(), s.prompt.as_str(), s.model.as_str(), s.continues.as_deref()), (Some("s1"), "Weiter", "opus", Some("r1")));
         assert_eq!(s.said, "Weiter");
-        let s = next_spec(&r, "Neu".into(), vec![], MsgOpts { fresh: true, model: Some("haiku".into()), plan: false, said: Some("/clear Neu".into()) });
+        let s = next_spec(&r, "Neu".into(), vec![], MsgOpts { fresh: true, model: Some("haiku".into()), plan: false, said: Some("/clear Neu".into()), ..Default::default() });
         assert_eq!(s.said, "/clear Neu");
         assert_eq!((s.resume, s.prompt.as_str(), s.model.as_str()), (None, "Neu", "haiku"));
         assert!(s.allow_once.is_empty(), "/clear forgets approvals of the old conversation");
@@ -475,6 +483,11 @@ mod tests {
         let s = next_spec(&p, "x".into(), vec![], MsgOpts { plan: true, ..Default::default() });
         assert!(s.plan_only && !s.plan_once);
         assert!(next_spec(&p, "x".into(), vec![], MsgOpts::default()).plan_only);
+        // /effort, /output-style and /add-dir stay for the next messages.
+        let o = MsgOpts { effort: Some("high".into()), output_style: Some("Learning".into()), add_dirs: vec!["/x".into(), "/x".into()], ..Default::default() };
+        let s = next_spec(&r, "x".into(), vec![], o);
+        assert_eq!((s.effort.as_str(), s.output_style.as_str(), s.dirs.clone()), ("high", "Learning", vec!["/x".to_string()]));
+        assert_eq!(next_spec(&Run { spec: s, ..r.clone() }, "y".into(), vec![], MsgOpts::default()).effort, "high");
         // To the other AI: no session of the old one, the last step comes along as text.
         let done = Run { summary: "Antwort".into(), ..r.clone() };
         let s = next_spec(&done, "Weiter".into(), vec![], MsgOpts { model: Some("chatgpt".into()), ..Default::default() });

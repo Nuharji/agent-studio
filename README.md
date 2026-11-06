@@ -80,8 +80,11 @@ API key and no password; routines, logs and history stay on your computer.
 - **Slash commands** like in the Claude desktop app: `/` in the chat box lists them — `/clear`, `/model`, `/plan`,
   `/compact`, `/cost`, `/diff`, `/stop`, `/full`, `/help` — plus **your own commands and skills** from
   `~/.claude/commands`, `~/.claude/skills` and `.claude/` in the run's folders (sent as their text, since runs don't
-  load Claude Code's own setup), the commands and skills of your plugins (`/plugin:command`), and Claude Code's own
-  `/init`, `/review`, `/security-review`, `/context` and `/mcp`.
+  load Claude Code's own setup), the commands and skills of your plugins (`/plugin:command`), Claude Code's own
+  `/init`, `/code-review`, `/security-review`, `/simplify`, `/context`, `/recap` and `/mcp`, and the rest of Claude Code's
+  commands done by Agent Studio: `/effort`, `/output-style`, `/add-dir`, `/status`, `/permissions`, `/agents`, `/skills`,
+  `/plugin`, `/export`, `/copy`, `/memory`, `/rewind`, `/resume`, `/todos`, `/config`, `/login`, `/logout`, `/doctor`,
+  `/release-notes`.
 - **Connectors, skills & plugins** (a right per project, routine or task): the run gets your Claude Code plugins that
   are turned on, your MCP servers and your claude.ai connectors, and may use their tools and skills — still with only
   Agent Studio's rights. A connector not known yet asks for approval the first time.

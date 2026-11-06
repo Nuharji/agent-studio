@@ -52,6 +52,10 @@ pub struct Spec {
     pub auto: bool,
     pub max_minutes: u32,
     pub model: String,
+    /// The effort level (/effort: low, medium, high, xhigh, max); empty = the model's own.
+    pub effort: String,
+    /// The output style (/output-style, e.g. "Explanatory", "Learning"); empty = the standard one.
+    pub output_style: String,
     pub rules: Vec<String>,
     pub lang: String,
     pub routine_id: Option<String>,
@@ -251,6 +255,7 @@ pub fn args(s: &Spec) -> Vec<String> {
     let extra: Vec<&String> = s.dirs.iter().skip(1).collect();
     let mut settings = json!({"permissions": {"allow": allow, "deny": deny, "additionalDirectories": extra}});
     if !s.lock_hook.is_empty() { settings["hooks"] = crate::lock::hook_settings(&s.lock_hook); }
+    if !s.output_style.trim().is_empty() { settings["outputStyle"] = json!(s.output_style.trim()); }
     let mut a: Vec<String> = ["-p", "--output-format", "stream-json", "--verbose", "--permission-mode"].map(String::from).to_vec();
     a.push(if s.plan_only { "plan" } else if s.auto { "auto" } else { "dontAsk" }.into());
     a.extend(["--setting-sources".into(), String::new(), "--settings".into(), settings.to_string(), "--append-system-prompt".into(), system_prompt(s)]);
@@ -259,6 +264,7 @@ pub fn args(s: &Spec) -> Vec<String> {
         if !s.mcp_config.is_empty() { a.extend(["--mcp-config".into(), s.mcp_config.clone()]); }
     }
     if !s.model.trim().is_empty() { a.extend(["--model".into(), s.model.trim().into()]); }
+    if !s.effort.trim().is_empty() { a.extend(["--effort".into(), s.effort.trim().into()]); }
     if let Some(r) = s.resume.as_ref().filter(|r| !r.is_empty()) { a.extend(["--resume".into(), r.clone()]); }
     a
 }
@@ -628,7 +634,11 @@ mod tests {
         assert_eq!(after("--plugin-dir").as_deref(), Some("/p/design"));
         assert_eq!(after("--mcp-config").as_deref(), Some(r#"{"mcpServers":{}}"#));
         assert!(system_prompt(&s).contains("Konnektoren"));
-        assert!(!x.iter().any(|v| v.contains("--file-lock")));
+        assert!(!x.iter().any(|v| v.contains("--file-lock") || v == "--effort" || v.contains("outputStyle")));
+        s.effort = "high".into();
+        s.output_style = "Explanatory".into();
+        let x = args(&s);
+        assert!(x.windows(2).any(|w| w[0] == "--effort" && w[1] == "high") && x.iter().any(|v| v.contains(r#""outputStyle":"Explanatory""#)));
         s.lock_hook = "/bin/agent-studio".into();
         assert!(args(&s).iter().any(|v| v.contains(r#""PreToolUse""#) && v.contains("--file-lock")), "the hook for the locks");
         let init = r#"{"type":"system","subtype":"init","session_id":"s","mcp_servers":[{"name":"claude.ai Canva","status":"connected"}]}"#;

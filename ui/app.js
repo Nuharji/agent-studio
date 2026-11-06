@@ -706,13 +706,38 @@ const BUILTIN = [
   {name: 'stop'},
   {name: 'full'},
   {name: 'help'},
+  // Like in Claude Code, done by Agent Studio (runs have no window of their own).
+  {name: 'effort', hint: 'sl.hintEffort'},
+  {name: 'output-style', hint: 'sl.hintStyle'},
+  {name: 'add-dir', hint: 'sl.hintDir'},
+  {name: 'status'},
+  {name: 'permissions', alias: ['allowed-tools']},
+  {name: 'agents'},
+  {name: 'skills'},
+  {name: 'plugin', alias: ['plugins']},
+  {name: 'export', alias: ['save']},
+  {name: 'copy'},
+  {name: 'memory'},
+  {name: 'rewind', alias: ['undo', 'checkpoint']},
+  {name: 'resume', alias: ['continue']},
+  {name: 'todos'},
+  {name: 'config', alias: ['settings']},
+  {name: 'login'},
+  {name: 'logout'},
+  {name: 'doctor'},
+  {name: 'release-notes'},
+  {name: 'reload-plugins'},
   // Claude Code's own commands that work without a window: sent to it as they are.
   {name: 'init', pass: true},
-  {name: 'review', pass: true, hint: 'sl.hintText'},
+  {name: 'code-review', alias: ['review'], pass: true, hint: 'sl.hintText'},
   {name: 'security-review', pass: true},
+  {name: 'simplify', pass: true, hint: 'sl.hintText'},
   {name: 'context', pass: true, session: true},
+  {name: 'recap', pass: true, session: true},
   {name: 'mcp', pass: true},
 ];
+const EFFORTS = ['auto', 'low', 'medium', 'high', 'xhigh', 'max'];
+const STYLES = ['default', 'Explanatory', 'Learning'];
 const MODELS = ['default', ...MODEL_OPTS.slice(1)];
 const chatMode = {};     // run id → {fresh, model, plan}: what the next message changes (/clear, /model, /plan)
 const slashCache = {};   // folders → {at, list}
@@ -723,17 +748,23 @@ async function ownCommands(r) {
   slashCache[key] = {at: Date.now(), list};
   return list;
 }
-const ownTag = c => t(c.kind === 'skill' ? 'sl.skill' : 'sl.own') + (c.source === 'project' ? ' · ' + t('sl.project') : c.source === 'plugin' ? ' · ' + t('sl.plugin') : '');
+const ownTag = c => t(c.kind === 'skill' ? 'sl.skill' : 'sl.own') + (c.source === 'project' ? ' · ' + t('sl.project') : c.source === 'plugin' ? ' · ' + t('sl.pluginTag') : '');
 const builtinOf = n => BUILTIN.find(b => b.name === n || (b.alias || []).includes(n));
 const modelName = m => m ? t('model.' + m) : t('model.default');
 function modeChips(id) {
   const m = chatMode[id]; if (!m) return '';
   const chip = (k, text) => `<span class="mode-chip">${esc(text)}<button data-mode-off="${esc(id)}|${k}" title="${esc(t('sl.off'))}">&#10005;</button></span>`;
-  const out = [m.fresh && chip('fresh', t('sl.chipFresh')), m.model !== undefined && chip('model', modelName(m.model)), m.plan && chip('plan', t('sl.chipPlan'))].filter(Boolean);
+  const out = [m.fresh && chip('fresh', t('sl.chipFresh')), m.model !== undefined && chip('model', modelName(m.model)), m.plan && chip('plan', t('sl.chipPlan')),
+    m.effort !== undefined && chip('effort', t('sl.chipEffort', {e: m.effort || 'auto'})), m.outputStyle !== undefined && chip('outputStyle', m.outputStyle || 'default'),
+    m.addDirs && chip('addDirs', '+ ' + m.addDirs.map(baseName).join(', '))].filter(Boolean);
   return out.length ? `<div class="mode-chips">${out.join('')}</div>` : '';
 }
 /* The entries the menu shows for what is typed: commands while the first word is typed, models after "/model ". */
 async function slashEntries(r, text) {
+  const em = /^\/effort\s+(\S*)$/i.exec(text);
+  if (em) return EFFORTS.filter(e => e.startsWith(em[1].toLowerCase())).map(e => ({name: 'effort ' + e, desc: t('sl.effort.' + e), fill: '/effort ' + e, run: true}));
+  const om = /^\/output-style\s+(\S*)$/i.exec(text);
+  if (om) return STYLES.filter(s => s.toLowerCase().startsWith(om[1].toLowerCase())).map(s => ({name: 'output-style ' + s, desc: t('sl.style.' + s), fill: '/output-style ' + s, run: true}));
   const mm = /^\/model\s+(\S*)$/i.exec(text);
   if (mm) return MODELS.filter(m => m.startsWith(mm[1].toLowerCase())).map(m => ({name: 'model ' + m, desc: modelName(m), fill: '/model ' + m, run: true}));
   const m = /^\/(\S*)$/.exec(text); if (!m) return [];
@@ -741,7 +772,7 @@ async function slashEntries(r, text) {
   const all = [...BUILTIN.map(b => ({name: b.name, desc: t('sl.' + b.name), hint: b.hint ? t(b.hint) : '', tag: '', alias: b.alias || []})),
     ...(await ownCommands(r)).map(c => ({name: c.name, desc: c.description, hint: c.hint, tag: ownTag(c)}))];
   const hit = e => [e.name, ...(e.alias || [])].some(n => n.toLowerCase().startsWith(q));
-  return [...all.filter(hit), ...all.filter(e => !hit(e) && (e.name.toLowerCase().includes(q) || String(e.desc).toLowerCase().includes(q)))].slice(0, 40)
+  return [...all.filter(hit), ...all.filter(e => !hit(e) && (e.name.toLowerCase().includes(q) || String(e.desc).toLowerCase().includes(q)))].slice(0, 80)
     .map(e => ({...e, fill: '/' + e.name + ' '}));
 }
 let slash = null;        // {id, items, at}: the open menu
@@ -778,6 +809,41 @@ function slashHelp(r) {
       ${own.length ? '' : `<p class="meta">${esc(t('sl.noOwn'))}</p>`}`);
   });
 }
+/* /status, /permissions, /agents, /skills, /plugin, /export: what Claude Code shows in its window, here in a dialog. */
+function slashStatus(r) {
+  const s = lastOf(r).spec, m = chatMode[r.id] || {};
+  const kv = (k, v) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`;
+  modal(t('sl.statusTitle'), kv(t('cl.model'), modelName(m.model !== undefined ? m.model : s.model)) + kv(t('sl.effortLabel'), (m.effort !== undefined ? m.effort : s.effort) || 'auto')
+    + kv(t('sl.styleLabel'), (m.outputStyle !== undefined ? m.outputStyle : s.outputStyle) || 'default') + kv(t('ed.level'), t('lv.' + s.level) + (s.auto ? ' · ' + t('ed.autoShort') : '') + (s.planOnly ? ' · ' + t('sl.chipPlan') : ''))
+    + kv(t('ed.web'), t(s.web ? 'ui.yes' : 'ui.no')) + kv(t('ed.connectorsShort'), t(s.connectors ? 'ui.yes' : 'ui.no')) + kv(t('ed.noDelete'), t(s.noDelete ? 'ui.yes' : 'ui.no'))
+    + kv(t('ed.dirs'), [...s.dirs, ...(m.addDirs || [])].join(', ')) + kv(t('sl.session'), lastOf(r).sessionId || '—') + kv(t('sl.costLabel'), '$' + chainCost(r).toFixed(2)));
+}
+async function slashRules(r) {
+  const x = await invoke('run_rules', {spec: lastOf(r).spec}).catch(() => ({allow: [], deny: []}));
+  const ul = l => l.length ? `<ul class="files">${l.map(v => `<li><code>${esc(v)}</code></li>`).join('')}</ul>` : `<p class="meta">—</p>`;
+  modal(t('sl.rulesTitle'), `<p class="meta">${esc(t('sl.rulesIntro'))}</p><div class="group-h">${esc(t('sl.allowed'))}</div>${ul(x.allow)}<div class="group-h">${esc(t('sl.refused'))}</div>${ul(x.deny)}`);
+}
+const listModal = (title, items, empty) => modal(title, items.length ? `<table class="sl-table">${items.map(c => `<tr><td><b>${esc(c.name)}</b></td><td>${esc(c.description || '')}${c.tag ? ` <span class="sl-tag">${esc(c.tag)}</span>` : ''}</td></tr>`).join('')}</table>` : `<p class="meta">${esc(empty)}</p>`);
+const srcTag = s => s === 'project' ? t('sl.project') : s === 'plugin' ? t('sl.pluginTag') : '';
+async function slashAgents(r) {
+  const l = await invoke('agents_list', {dirs: r.spec.dirs}).catch(() => []);
+  listModal(t('sl.agentsTitle'), l.map(c => ({...c, tag: srcTag(c.source)})), t('sl.noAgents'));
+}
+async function slashList(r, kind) {
+  const l = (await ownCommands(r)).filter(c => c.kind === kind).map(c => ({...c, name: '/' + c.name, tag: srcTag(c.source)}));
+  listModal(t('sl.skillsTitle'), l, t('sl.noOwn'));
+}
+async function slashPlugins(r) {
+  const l = await invoke('plugins_list', {dirs: r.spec.dirs}).catch(() => []);
+  listModal(t('sl.pluginsTitle'), l.map(p => ({name: p.name, description: p.id + ' — ' + p.path})), t('sl.noPlugins'));
+  if (l.length && !lastOf(r).spec.connectors) toast(t('sl.pluginsOff'));
+}
+async function slashExport(r, name) {
+  const md = chainOf(lastOf(r)).map(x => `## ${t('sl.you')}\n\n${(x.spec.said || x.spec.prompt || '').trim()}\n\n## ${x.spec.model && isCodex(x.spec.model) ? 'ChatGPT' : 'Claude'}\n\n${(x.summary || '').trim()}\n`).join('\n');
+  const title = (firstOf(r).spec.title || 'chat').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 60) || 'chat';
+  const p = await invoke('save_text', {name: (name || title).replace(/\.md$/i, '') + '.md', content: `# ${firstOf(r).spec.title || ''}\n\n${md}`}).catch(err => { toast(String(err)); return null; });
+  if (p) toast(t('sl.exported', {p}));
+}
 /* Sends what is in the chat box of run `id`: a slash command, or a message (with what /clear, /model, /plan set). */
 async function sendChat(id) {
   const el = $(`[data-chat-in="${CSS.escape(id)}"]`), r = runOf(id);
@@ -786,7 +852,8 @@ async function sendChat(id) {
   if (!text) { el.focus(); return; }
   const done = () => { el.value = ''; chatChanged(el); delete chatDraft[id]; slashClose(); };
   const mode = chatMode[id] || {};
-  let prompt = text, opts = {fresh: !!mode.fresh, model: mode.model === undefined ? null : mode.model, plan: !!mode.plan};
+  let prompt = text, opts = {fresh: !!mode.fresh, model: mode.model === undefined ? null : mode.model, plan: !!mode.plan,
+    effort: mode.effort === undefined ? null : mode.effort, outputStyle: mode.outputStyle === undefined ? null : mode.outputStyle, addDirs: mode.addDirs || []};
   const m = /^\/(\S+)(?:\s+([\s\S]*))?$/.exec(text);
   if (m && !text.startsWith('//')) {
     const name = m[1].toLowerCase(), args = (m[2] || '').trim(), b = builtinOf(name);
@@ -809,6 +876,56 @@ async function sendChat(id) {
       case 'stop': done(); return isRunning(id) ? stopRun(id) : toast(t('run.noneRunning'));
       case 'full': done(); return full ? closeFull() : openFull(id);
       case 'help': done(); return slashHelp(r);
+      case 'effort': {
+        if (!args) { el.value = '/effort '; chatChanged(el); return slashMenu(el); }
+        const e = args.toLowerCase();
+        if (!EFFORTS.includes(e)) return toast(t('sl.badEffort', {e: args, list: EFFORTS.join(', ')}));
+        if (isCodex(r.spec.model)) return toast(t('sl.claudeOnly'));
+        return set('effort', e === 'auto' ? '' : e, t('sl.effortSet', {e}));
+      }
+      case 'output-style': {
+        if (!args) { el.value = '/output-style '; chatChanged(el); return slashMenu(el); }
+        if (isCodex(r.spec.model)) return toast(t('sl.claudeOnly'));
+        const s = STYLES.find(x => x.toLowerCase() === args.toLowerCase()) || args;
+        return set('outputStyle', s === 'default' ? '' : s, t('sl.styleSet', {s}));
+      }
+      case 'add-dir': {
+        const dir = args || (invoke ? await invoke('pick_folder') : null);
+        if (!dir) return;
+        chatMode[id] = {...mode, addDirs: [...new Set([...(mode.addDirs || []), dir])]}; done(); toast(t('sl.dirSet', {d: dir})); return renderAll();
+      }
+      case 'status': done(); return slashStatus(r);
+      case 'permissions': done(); return slashRules(r);
+      case 'agents': done(); return slashAgents(r);
+      case 'skills': done(); return slashList(r, 'skill');
+      case 'plugin': done(); return slashPlugins(r);
+      case 'export': done(); return slashExport(r, args);
+      case 'copy': {
+        const last = lastOf(r), text2 = (last.summary || '').trim();
+        if (!text2) return toast(t('sl.nothingToCopy'));
+        done(); return invoke('clipboard_write', {text: text2}).then(() => toast(t('sl.copied'))).catch(err => toast(String(err)));
+      }
+      case 'memory': {
+        done();
+        const f = (r.spec.dirs[0] || '') + '/CLAUDE.md';
+        return invoke('read_text', {path: f}).then(() => invoke('open_path', {path: f})).catch(() => toast(t('sl.noMemory')));
+      }
+      case 'rewind': {
+        done();
+        const u = chainOf(lastOf(r)).reverse().find(x => !x.undone && x.repos.some(y => y.commits.length) && !x.repos.some(y => y.pushed));
+        if (!u) return toast(t('sl.nothingToRewind'));
+        if (!await ask(t('run.undoTitle'), t('run.undoAsk'), t('run.undo'))) return;
+        try { const n = await invoke('run_undo', {id: u.id}); toast(tn('run.undoneN', n)); await refresh(); } catch (err) { toast(t('run.undoFail', {e: err})); }
+        return;
+      }
+      case 'resume': done(); return setView(isChat(r) ? 'chats' : 'history');
+      case 'todos': done(); return r.spec.project && projectOf(r.spec.project) ? openProject(r.spec.project, 'tasks') : toast(t('sl.noProject'));
+      case 'config': done(); return openSettings();
+      case 'login': done(); openSettings('claude'); return login();
+      case 'logout': done(); toast(t('sl.logoutHint')); return openSettings('claude');
+      case 'doctor': done(); return openSettings('claude');
+      case 'release-notes': done(); return invoke('open_url', {url: 'https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md'}).catch(err => toast(String(err)));
+      case 'reload-plugins': done(); return toast(t('sl.reloadNote'));
       default:
         if (!b.pass) break;
         if (isCodex(r.spec.model)) return toast(t('sl.claudeOnly'));

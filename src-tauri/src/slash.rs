@@ -46,7 +46,7 @@ fn first_line(body: &str) -> String {
 fn read(path: &Path, name: String, kind: &str, source: &str) -> Option<Cmd> {
     let text = std::fs::read_to_string(path).ok()?;
     let (kv, body) = front(&text);
-    let name = if kind == "skill" { Some(get(&kv, "name")).filter(|n| !n.is_empty()).unwrap_or(name) } else { name };
+    let name = if kind == "skill" || kind == "agent" { Some(get(&kv, "name")).filter(|n| !n.is_empty()).unwrap_or(name) } else { name };
     let d = get(&kv, "description");
     Some(Cmd { name, description: if d.is_empty() { first_line(body) } else { d }, hint: get(&kv, "argument-hint"), kind: kind.into(), source: source.into(), path: path.to_string_lossy().into_owned() })
 }
@@ -100,6 +100,24 @@ pub fn list(home: &Path, dirs: &[String]) -> Vec<Cmd> {
     }
     let mut seen: Vec<String> = Vec::new();
     out.retain(|c| { let k = c.name.to_lowercase(); if seen.contains(&k) { false } else { seen.push(k); true } });
+    out
+}
+
+/// The subagents (agents/*.md) of the person, of the folders and of the plugins turned on — what /agents shows.
+pub fn agents(home: &Path, dirs: &[String]) -> Vec<Cmd> {
+    let mut out: Vec<Cmd> = Vec::new();
+    let mut add = |dir: PathBuf, prefix: &str, source: &str| {
+        let Ok(rd) = std::fs::read_dir(&dir) else { return };
+        let mut es: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("md"))).collect();
+        es.sort();
+        for p in es {
+            let stem = p.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+            if let Some(mut c) = read(&p, stem, "agent", source) { c.name = format!("{prefix}{}", c.name); out.push(c); }
+        }
+    };
+    for d in dirs { if Path::new(d) != home { add(Path::new(d).join(".claude/agents"), "", "project"); } }
+    add(home.join(".claude/agents"), "", "user");
+    for p in crate::connect::plugins(home, dirs) { add(Path::new(&p.path).join("agents"), &format!("{}:", p.name), "plugin"); }
     out
 }
 
@@ -186,6 +204,11 @@ mod tests {
         let l = list(&home, &[]);
         let p: Vec<(&str, &str)> = l.iter().filter(|c| c.source == "plugin").map(|c| (c.name.as_str(), c.kind.as_str())).collect();
         assert_eq!(p, vec![("design:handoff", "command"), ("design:critique", "skill")]);
+        w(pl.join("agents/reviewer.md"), "---\nname: ui-reviewer\ndescription: Reviews UI\n---\nYou review.");
+        w(home.join(".claude/agents/helper.md"), "---\ndescription: Helps\n---\nHelp.");
+        let a = agents(&home, &[]);
+        assert_eq!(a.iter().map(|c| (c.name.as_str(), c.source.as_str(), c.description.as_str())).collect::<Vec<_>>(),
+            vec![("helper", "user", "Helps"), ("design:ui-reviewer", "plugin", "Reviews UI")]);
         let _ = std::fs::remove_dir_all(d);
     }
 

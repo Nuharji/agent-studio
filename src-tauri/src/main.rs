@@ -205,6 +205,29 @@ fn slash_list(dirs: Vec<String>) -> Vec<slash::Cmd> {
     slash::list(&home, &dirs)
 }
 
+/// The subagents for a run in these folders (/agents).
+#[tauri::command]
+fn agents_list(dirs: Vec<String>) -> Vec<slash::Cmd> { slash::agents(&runner::home(), &dirs) }
+
+/// The plugins turned on for a run in these folders (/plugin).
+#[tauri::command]
+fn plugins_list(dirs: Vec<String>) -> Vec<connect::Plugin> { connect::plugins(&runner::home(), &dirs) }
+
+/// What a run may do and what is refused, as Claude Code gets it (/permissions).
+#[tauri::command]
+fn run_rules(spec: runner::Spec) -> serde_json::Value {
+    let (allow, deny) = runner::rules(&spec);
+    serde_json::json!({"allow": allow, "deny": deny})
+}
+
+/// Saves a text where the person chooses (/export); the path, or nothing when cancelled.
+#[tauri::command]
+async fn save_text(app: AppHandle, name: String, content: String) -> Result<Option<String>, String> {
+    let Some(p) = shared::file_dialog(&app).set_file_name(&name).add_filter("Markdown", &["md"]).blocking_save_file().and_then(|f| f.into_path().ok()) else { return Ok(None) };
+    fs::write(&p, content).map_err(|e| e.to_string())?;
+    Ok(Some(p.to_string_lossy().into_owned()))
+}
+
 /// The text sent to Claude for "/name args".
 #[tauri::command]
 fn slash_expand(path: String, kind: String, name: String, args: String, lang: String) -> Result<String, String> {
@@ -482,6 +505,10 @@ fn main() {
             run_message,
             slash_list,
             slash_expand,
+            agents_list,
+            plugins_list,
+            run_rules,
+            save_text,
             inbox_answer,
             inbox_dismiss,
             runs_clear,
