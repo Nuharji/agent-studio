@@ -125,8 +125,8 @@ function viewHome() {
   const ps = cfg.projects || [], running = data.runs.filter(r => isRunning(r.id)), need = needItems();
   let h = `<div class="view-title"><h1>${esc(t('v.home'))}</h1><span class="sub">${esc(t('home.sub'))}</span><span class="flex"></span>
     <button class="btn-sm" data-act="addProject">${esc(t('a.addProject'))}</button><button class="btn-sm primary" data-act="newApp">${esc(t('a.newApp'))}</button></div>`;
-  h += signInHint() + usageCard();
-  if (!ps.length) return h + `<div class="empty-big"><div class="big-tile">Ag</div><h2>${esc(t('home.emptyTitle'))}</h2><p>${esc(t('home.empty'))}</p>
+  h += signInHint() + (ps.length ? mascotCard() : '') + usageCard();
+  if (!ps.length) return h + `<div class="empty-big">${cfg.mascot === false ? '<div class="big-tile">Ag</div>' : mascotSvg('idle', 96)}<h2>${esc(t('home.emptyTitle'))}</h2><p>${esc(t('home.empty'))}</p>
     <div class="it-actions"><button class="btn-sm primary" data-act="newApp">${esc(t('a.newApp'))}</button><button class="btn-sm" data-act="addProject">${esc(t('a.addProject'))}</button><button class="btn-sm" data-act="newChat">${esc(t('a.newChat'))}</button></div></div>`;
   if (need.length) h += `<div class="pcard approval home-need" data-act="viewInbox"><b>${esc(tn('inbox.count', need.length))}</b> <span class="meta">${esc(need.slice(0, 3).map(i => i.title).join(' · '))}</span><span class="flex"></span><button class="btn-sm primary">${esc(t('inbox.open'))}</button></div>`;
   if (running.length) h += `<div class="group-h">${esc(t('inbox.running'))}</div>` + running.map(r => runRow(r, true)).join('');

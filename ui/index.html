@@ -451,6 +451,23 @@ body{grid-template-columns:minmax(0,1fr)}
 .denials li{background:var(--code-bg);border:1px solid var(--card-border);border-radius:var(--radius);padding:3px 8px;margin:3px 0;overflow-wrap:anywhere;user-select:text}
 .empty-s{color:var(--dim);padding:6px 2px;line-height:1.6}
 .empty-big{display:flex;flex-direction:column;align-items:center;gap:12px;padding:60px 20px;text-align:center;color:var(--dim)}
+.mascot-card{display:flex;align-items:center;gap:14px;cursor:pointer;padding:10px 16px}
+.m-bubble{position:relative;display:flex;flex-direction:column;gap:2px;background:var(--hover);border-radius:12px;padding:8px 12px;font-size:13px}
+.m-bubble::before{content:"";position:absolute;left:-6px;top:50%;margin-top:-6px;border:6px solid transparent;border-left:0;border-right-color:var(--hover)}
+.m-bubble b{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim)}
+.mascot{flex:none;overflow:visible}.mascot .m-face{fill:#fff;opacity:.94}.mascot .m-white{fill:#fff}.mascot .m-fill{fill:#1d2433;stroke:none}
+.mascot .m-line{stroke:#1d2433;stroke-width:2.2;stroke-linecap:round;fill:none}.mascot line.m-line{stroke:var(--tile-a)}
+.mascot .m-bulb{fill:var(--tile-b)}.mascot .m-cheek{fill:#ff8fa3;opacity:.55}.mascot .m-bang{font:800 16px system-ui,sans-serif;fill:var(--warn,#e5a50a)}
+.mascot .m-eyes{transform-origin:32px 33px;animation:mBlink 5s infinite}
+.mascot.m-work .m-body{animation:mBob 1.1s ease-in-out infinite}.mascot.m-work .m-bulb{animation:mGlow 1.1s ease-in-out infinite}
+.mascot.m-need .m-bang{animation:mBob .8s ease-in-out infinite}
+.mascot.hop .m-body{animation:mHop .5s ease-out}
+@keyframes mBlink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+@keyframes mBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
+@keyframes mGlow{0%,100%{fill:var(--tile-b)}50%{fill:#fff6a8}}
+@keyframes mHop{0%,100%{transform:translateY(0)}40%{transform:translateY(-8px)}}
+@media (prefers-reduced-motion:reduce){.mascot *,.mascot .m-body{animation:none!important}}
+.empty-big .mascot{width:96px;height:96px}
 .empty-big .big-tile{width:84px;height:84px;border-radius:22.5%;background:linear-gradient(135deg,var(--tile-a),var(--tile-b));display:grid;place-items:center;color:#fff;font-weight:800;font-size:32px}
 .empty-big h2{margin:0;color:var(--strong);font-size:17px}
 .empty-big p{margin:0;max-width:460px;line-height:1.6}
@@ -730,6 +747,7 @@ html[data-l-flex] .main>.side.tools{width:224px}
 <script src="shortcuts.js"></script>
 <script src="shared.js"></script>
 <script src="projects.js"></script>
+<script src="mascot.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

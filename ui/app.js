@@ -1196,7 +1196,7 @@ const A = {
   dismissDone: async () => { const ids = data.inbox.filter(i => i.kind === 'done' || i.kind === 'problem').map(i => i.id); if (ids.length) { await invoke('inbox_dismiss', {ids}); refresh(); } },
   clearHistory: async () => { if (await ask(t('a.clearHistory'), t('hist.clearAsk'), t('a.clearHistory'))) { await invoke('runs_clear'); sel = null; refresh(); } },
   refreshUsage: () => loadUsage(true).then(() => renderView()),
-  viewHome: () => setView('home'), viewInbox: () => setView('inbox'), viewRoutines: () => setView('routines'), viewHistory: () => setView('history'), viewChats: () => setView('chats'),
+  viewHome: () => setView('home'), mascotPoke: () => { const m = $('.mascot-card .mascot'); if (m) { m.classList.remove('hop'); void m.getBoundingClientRect(); m.classList.add('hop'); } }, viewInbox: () => setView('inbox'), viewRoutines: () => setView('routines'), viewHistory: () => setView('history'), viewChats: () => setView('chats'),
   togglePanels: () => { settings.dock = !settings.dock; applySettings(); },
   toggleAutoHide: () => { settings.autoHide = !settings.autoHide; applySettings(); },
   settings: () => openSettings(), claudeSettings: () => openSettings('claude'), controlSettings: () => openSettings('control'),
@@ -1347,7 +1347,8 @@ function renderSettings() {
     general: `<h3>${esc(t('set.language'))}</h3><p class="hint">${esc(t('set.languageHint'))}</p>
       <select class="wide-sel" data-set="lang">${opt('auto', t('a.langAuto'), settings.lang)}${opt('en', 'English', settings.lang)}${opt('de', 'Deutsch', settings.lang)}</select>
       <h3>${esc(t('set.layout'))}</h3>${sw('dock', t('set.panels'), settings.dock)}${sw('autoHide', t('set.autoHide'), settings.autoHide)}
-      <h3>${esc(t('set.notes'))}</h3>${sw('doneNotes', t('set.doneNotes'), cfg.doneNotes)}<p class="hint">${esc(t('set.doneNotesHint'))}</p>`,
+      <h3>${esc(t('set.notes'))}</h3>${sw('doneNotes', t('set.doneNotes'), cfg.doneNotes)}<p class="hint">${esc(t('set.doneNotesHint'))}</p>
+      <h3>${esc(t('masc.name'))}</h3>${sw('mascot', t('masc.show'), cfg.mascot !== false)}<p class="hint">${esc(t('masc.hint'))}</p>`,
     claude: `<h3>${esc(t('cl.program'))}</h3><p class="hint">${esc(t('cl.programHint'))}</p>
       ${!invoke ? `<p class="hint">${esc(t('ui.appOnly'))}</p>` : `
       <p>${claude.checked ? (claude.path ? `<b>${esc(t('cl.found'))}</b> ${esc(claude.version)}<br><span class="meta">${esc(claude.path)}</span>` : `<b style="color:var(--danger)">${esc(t('cl.notFound'))}</b><br><span class="meta">${esc(t('cl.notFoundHint'))}</span>`) : esc(t('cl.checking'))}</p>
@@ -1408,6 +1409,7 @@ function renderSettings() {
     const k = e.target.dataset.set; if (!k) return;
     if (k === 'lang') { setLang(e.target.value); renderSettings(); return; }
     if (k === 'dock' || k === 'autoHide') { settings[k] = e.target.checked; applySettings(); return; }
+    if (k === 'mascot') { cfg.mascot = e.target.checked; saveCfg(); renderAll(); return; }
     if (k === 'doneNotes') { cfg.doneNotes = e.target.checked; saveCfg(); refresh(); return; }
     if (k === 'linkAccept' || k === 'linkWeb') { cfg.link[k === 'linkAccept' ? 'accept' : 'web'] = e.target.checked; saveCfg(); return; }
     if (k === 'linkLevel') { cfg.link.level = e.target.value; saveCfg(); return; }
