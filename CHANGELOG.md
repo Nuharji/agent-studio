@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.6.0 — 2026-11-12
+- New (Beta): layout **3D (Beta)** — Agent Studio as a real **server rack**. Every project is a rack unit (in its color, with version, branch and open to-dos); the green LED is power, the blue one blinks while Claude works on the project, amber means it waits for you, red that its folder is missing. Apps and document projects have their own section. A click (or Tab + Enter) opens the project, "To the app" (or Esc) shows the normal window, the button "3D view" at the bottom right brings the rack back. Drag turns the room, the wheel zooms, Shift + drag moves it. Choose it in Settings → Appearance → Layout.
+
 ## 1.5.0 — 2026-11-07
 - New: **connectors, skills & plugins** — a new right "Use connectors, skills & plugins" (project setup, routines, tasks). With it a run gets your Claude Code plugins that are turned on (with their skills, commands and agents), your MCP servers (`~/.claude.json`, the project's `.mcp.json`, the plugins' own) and your claude.ai connectors, and may use their tools and skills. Agent Studio's rights still are the only ones that count. A claude.ai connector is learned in the first run that sees it (that run asks you for approval). Without the right, auto mode uses no MCP tool.
 - New: **two runs never change the same file at once.** The first run that changes a file holds it until it ends; another run that wants to change it is stopped with a note and works on something else first (or names the file as open). Done by a hook Agent Studio gives every Claude run (Edit, Write, MultiEdit, NotebookEdit); changes made through shell commands and ChatGPT runs are not covered.

@@ -567,3 +567,31 @@ function migrate(c) {
   c.version = 2;
   return c;
 }
+
+/* ================= 3D (Beta): the server rack ================= */
+/* Layout „3D (Beta)“ (room3d.js): the projects as rack units — the green LED is power, the blue one blinks while Claude
+   works on the project, amber means it waits for you, red that its folder is missing. Apps first, then document projects. */
+const R3 = {
+  en: {title: 'Server rack', apps: 'Apps', docs: 'Documents', empty: 'No projects yet — every project becomes a rack unit here.', newApp: 'New app…',
+    running: 'working', needs: 'waits for you', missing: 'folder missing', todos: n => n === 1 ? '1 to-do' : n + ' to-dos'},
+  de: {title: 'Server-Rack', apps: 'Apps', docs: 'Dokumente', empty: 'Noch keine Projekte — jedes Projekt wird hier ein Einschub im Rack.', newApp: 'Neue App…',
+    running: 'arbeitet', needs: 'wartet auf dich', missing: 'Ordner fehlt', todos: n => n === 1 ? '1 To-do' : n + ' To-dos'}
+};
+let r3InfoAt = 0;
+function rackScene() {
+  if (!booted) return {kind: 'rack', groups: []};
+  const L = R3[lang] || R3.en, ps = [...(cfg.projects || [])];
+  if (ps.length && Date.now() - r3InfoAt > 20000) { r3InfoAt = Date.now(); loadAllInfo(); }
+  ps.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || a.name.localeCompare(b.name));
+  const unit = p => {
+    const i = info[p.id] || {}, run = projRunning(p.id), nd = projNeeds(p.id), todo = openTodos(p).length;
+    const sub = [i.version && 'v' + i.version, i.git && '⎇ ' + i.git.branch, todo && L.todos(todo),
+      run && L.running, nd && L.needs, i.exists === false && L.missing].filter(Boolean).join(' · ');
+    return {id: p.id, label: p.name, sub, color: p.color, active: curProject() === p,
+      state: i.exists === false ? 'error' : run ? 'running' : nd ? 'attention' : 'on'};
+  };
+  const apps = ps.filter(p => !isDocs(p)), docs = ps.filter(isDocs);
+  return {kind: 'rack', brand: 'Agent Studio', groups: [{label: L.apps, items: apps.map(unit)}, {label: L.docs, items: docs.map(unit)}],
+    empty: L.empty, emptyAction: {label: L.newApp, run: () => { Room3D.hide(); run('newApp'); }}};
+}
+if (window.Room3D) Room3D.register({data: rackScene, open: id => openProject(id), title: () => (R3[lang] || R3.en).title});
