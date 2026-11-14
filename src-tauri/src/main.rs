@@ -1,6 +1,7 @@
 // Hide the console window in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appicon;
 mod agentlink;
 mod codex;
 mod connect;
@@ -477,6 +478,7 @@ fn main() {
             let _ = app.emit("context-menu", event.id().as_ref());
         })
         .invoke_handler(tauri::generate_handler![
+            appicon::set_dock_icon,
             shared::shared_get,
             shared::shared_set,
             agentlink::agent_poll,

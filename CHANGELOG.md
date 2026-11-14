@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.7.0 — 2026-11-14
+- New: the app logo follows the theme — the logo in the menu bar, the big tile on the start page and, while the app runs, the icon in the Dock (macOS) and the taskbar / window icon (Windows, Linux). CLI themes: black with the accent color and an edge in it; High contrast: black and white with a yellow edge; Graphite: gray with the logo in the app's color; GitHub and Sand: a light card; GitHub Dark, Midnight and Dusk: tinted with the theme; Light and Rosé: the light tile. Dark keeps the usual icon.
+
 ## 1.6.0 — 2026-11-12
 - New (Beta): layout **3D (Beta)** — Agent Studio as a real **server rack**. Every project is a rack unit (in its color, with version, branch and open to-dos); the green LED is power, the blue one blinks while Claude works on the project, amber means it waits for you, red that its folder is missing. Apps and document projects have their own section. A click (or Tab + Enter) opens the project, "To the app" (or Esc) shows the normal window, the button "3D view" at the bottom right brings the rack back. Drag turns the room, the wheel zooms, Shift + drag moves it. Choose it in Settings → Appearance → Layout.
 
